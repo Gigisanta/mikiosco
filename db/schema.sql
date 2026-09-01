@@ -1,0 +1,25 @@
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+CREATE TYPE user_role AS ENUM ('ADMIN', 'CASHIER', 'VIEWER');
+CREATE TYPE sale_status AS ENUM ('COMPLETED', 'VOIDED', 'DRAFT');
+CREATE TYPE payment_method AS ENUM ('CASH', 'CARD', 'TRANSFER', 'ACCOUNT');
+CREATE TYPE stock_movement_type AS ENUM ('PURCHASE', 'SALE', 'ADJUSTMENT', 'RETURN');
+CREATE TYPE cash_session_status AS ENUM ('OPEN', 'CLOSED');
+
+CREATE TABLE organizations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE branches (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL REFERENCES organizations(id), name text NOT NULL, address text, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, email text NOT NULL UNIQUE, password_hash text NOT NULL, active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE memberships (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL REFERENCES users(id), branch_id uuid NOT NULL REFERENCES branches(id), role user_role NOT NULL, UNIQUE(user_id, branch_id));
+CREATE TABLE categories (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), branch_id uuid NOT NULL REFERENCES branches(id), name text NOT NULL, UNIQUE(branch_id, name));
+CREATE TABLE suppliers (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), branch_id uuid NOT NULL REFERENCES branches(id), name text NOT NULL, phone text, email text, current_debt numeric(14,2) NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE products (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), branch_id uuid NOT NULL REFERENCES branches(id), category_id uuid REFERENCES categories(id), supplier_id uuid REFERENCES suppliers(id), barcode text, name text NOT NULL, sale_price numeric(14,2) NOT NULL, cost_price numeric(14,2) NOT NULL DEFAULT 0, stock numeric(14,3) NOT NULL DEFAULT 0, min_stock numeric(14,3) NOT NULL DEFAULT 0, active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(branch_id, barcode));
+CREATE TABLE customers (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), branch_id uuid NOT NULL REFERENCES branches(id), name text NOT NULL, phone text, document text, credit_limit numeric(14,2) NOT NULL DEFAULT 0, balance numeric(14,2) NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE cash_sessions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), branch_id uuid NOT NULL REFERENCES branches(id), opened_by uuid NOT NULL REFERENCES users(id), closed_by uuid REFERENCES users(id), opening_amount numeric(14,2) NOT NULL, closing_amount numeric(14,2), status cash_session_status NOT NULL DEFAULT 'OPEN', opened_at timestamptz NOT NULL DEFAULT now(), closed_at timestamptz);
+CREATE TABLE sales (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), branch_id uuid NOT NULL REFERENCES branches(id), cash_session_id uuid REFERENCES cash_sessions(id), customer_id uuid REFERENCES customers(id), user_id uuid NOT NULL REFERENCES users(id), ticket_number bigint NOT NULL, status sale_status NOT NULL DEFAULT 'COMPLETED', subtotal numeric(14,2) NOT NULL, discount numeric(14,2) NOT NULL DEFAULT 0, total numeric(14,2) NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(branch_id, ticket_number));
+CREATE TABLE sale_items (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), sale_id uuid NOT NULL REFERENCES sales(id) ON DELETE CASCADE, product_id uuid REFERENCES products(id), product_name text NOT NULL, quantity numeric(14,3) NOT NULL CHECK(quantity > 0), unit_price numeric(14,2) NOT NULL, unit_cost numeric(14,2) NOT NULL DEFAULT 0, total numeric(14,2) NOT NULL);
+CREATE TABLE payments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), sale_id uuid NOT NULL REFERENCES sales(id) ON DELETE CASCADE, method payment_method NOT NULL, amount numeric(14,2) NOT NULL CHECK(amount > 0), reference text, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE stock_movements (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), branch_id uuid NOT NULL REFERENCES branches(id), product_id uuid NOT NULL REFERENCES products(id), type stock_movement_type NOT NULL, quantity numeric(14,3) NOT NULL, reference_id uuid, note text, user_id uuid REFERENCES users(id), created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE cash_expenses (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), cash_session_id uuid NOT NULL REFERENCES cash_sessions(id), user_id uuid NOT NULL REFERENCES users(id), concept text NOT NULL, amount numeric(14,2) NOT NULL CHECK(amount > 0), created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX products_branch_search_idx ON products(branch_id, name);
+CREATE INDEX sales_branch_created_idx ON sales(branch_id, created_at DESC);
+CREATE INDEX stock_movements_product_created_idx ON stock_movements(product_id, created_at DESC);

@@ -1,0 +1,9 @@
+{
+  "name": "MiKiosco",
+  "short_name": "MiKiosco",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7f4",
+  "theme_color": "#087b56",
+  "description": "Gestión simple para kioscos"
+}
