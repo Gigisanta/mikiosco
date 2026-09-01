@@ -1,3 +1,8 @@
+<!-- maatwork-brand:maatwork-mw-20260901 -->
+<p align="center"><img src="docs/brand/mikiosco-cover.png" alt="MiKiosco · MaatWork" width="1200"></p>
+
+> Gestión simple para kioscos
+
 # MiKiosco
 
 MiKiosco es una aplicación web de gestión para kioscos: ventas, caja, inventario, clientes y reportes en una interfaz de uso rápido.
