@@ -8,10 +8,12 @@ const paymentMethods = [
   ['CASH', 'Efectivo'],
   ['CARD', 'Tarjeta'],
   ['TRANSFER', 'Transferencia'],
+  ['ACCOUNT', 'Cuenta'],
 ]
 
 export function SalesView({
   products,
+  customers,
   query,
   setQuery,
   cart,
@@ -23,17 +25,21 @@ export function SalesView({
   changeQuantity,
   clearCart,
   finishSale,
+  onCreateCustomer,
   canSell,
 }) {
   const [method, setMethod] = useState('CASH')
   const [splitPayment, setSplitPayment] = useState(false)
-  const [amounts, setAmounts] = useState({ CASH: '', CARD: '', TRANSFER: '' })
+  const [amounts, setAmounts] = useState({ CASH: '', CARD: '', TRANSFER: '', ACCOUNT: '' })
   const [cashReceived, setCashReceived] = useState('')
   const [discount, setDiscount] = useState('')
   const [scanQuantity, setScanQuantity] = useState('1')
   const [ticketWidth, setTicketWidth] = useState('80')
   const [selectedId, setSelectedId] = useState(null)
   const [checkoutError, setCheckoutError] = useState('')
+  const [category, setCategory] = useState('Todos')
+  const [customerId, setCustomerId] = useState('')
+  const [newCustomer, setNewCustomer] = useState('')
   const searchRef = useRef(null)
   const discountRef = useRef(null)
   const firstProductRef = useRef(null)
@@ -41,12 +47,14 @@ export function SalesView({
   const categories = [...new Set(products.map((product) => product.category))].sort()
   const visibleProducts = useMemo(
     () =>
-      products.filter((product) =>
-        [product.name, product.category, product.barcode].some((value) =>
-          String(value).toLowerCase().includes(query.toLowerCase()),
-        ),
+      products.filter(
+        (product) =>
+          (category === 'Todos' || product.category === category) &&
+          [product.name, product.barcode].some((value) =>
+            String(value).toLowerCase().includes(query.toLowerCase()),
+          ),
       ),
-    [products, query],
+    [category, products, query],
   )
   const safeDiscount = Math.min(total, normalizeMoney(discount))
   const amountDue = normalizeMoney(total - safeDiscount)
@@ -55,6 +63,7 @@ export function SalesView({
     : method === 'CASH'
       ? amountDue
       : 0
+  const usesAccount = splitPayment ? normalizeMoney(amounts.ACCOUNT) > 0 : method === 'ACCOUNT'
   const change = calculateChange(cashReceived || cashApplied, cashApplied)
 
   useEffect(() => {
@@ -123,6 +132,10 @@ export function SalesView({
       setCheckoutError('El efectivo recibido no alcanza para cubrir su parte del pago.')
       return
     }
+    if (payments.some((payment) => payment.method === 'ACCOUNT') && !customerId) {
+      setCheckoutError('Elegí un cliente para vender a cuenta.')
+      return
+    }
     const completed = await finishSale({
       subtotal: total,
       discount: safeDiscount,
@@ -130,13 +143,27 @@ export function SalesView({
       payments,
       cashReceived: normalizeMoney(cashReceived || cashApplied),
       change,
+      customerId: customerId || null,
     })
     if (completed) {
-      setAmounts({ CASH: '', CARD: '', TRANSFER: '' })
+      setAmounts({ CASH: '', CARD: '', TRANSFER: '', ACCOUNT: '' })
       setCashReceived('')
       setDiscount('')
       setSplitPayment(false)
       setCheckoutError('')
+      setCustomerId('')
+    }
+  }
+
+  async function createCustomer() {
+    if (!newCustomer.trim()) return
+    try {
+      const customer = await onCreateCustomer({ name: newCustomer.trim(), creditLimit: 0 })
+      setCustomerId(customer.id)
+      setNewCustomer('')
+      setCheckoutError('')
+    } catch (requestError) {
+      setCheckoutError(requestError.message)
     }
   }
 
@@ -170,12 +197,19 @@ export function SalesView({
           </label>
         </form>
         <div className="category-row">
-          <button className="chip selected" onClick={() => setQuery('')}>
+          <button
+            className={category === 'Todos' ? 'chip selected' : 'chip'}
+            onClick={() => setCategory('Todos')}
+          >
             Todos
           </button>
-          {categories.map((category) => (
-            <button className="chip" key={category} onClick={() => setQuery(category)}>
-              {category}
+          {categories.map((categoryName) => (
+            <button
+              className={category === categoryName ? 'chip selected' : 'chip'}
+              key={categoryName}
+              onClick={() => setCategory(categoryName)}
+            >
+              {categoryName}
             </button>
           ))}
         </div>
@@ -329,6 +363,32 @@ export function SalesView({
                   />
                 </label>
               ))}
+            </div>
+          )}
+          {usesAccount && (
+            <div className="account-checkout">
+              <label>
+                Cliente de cuenta corriente
+                <select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+                  <option value="">Elegir cliente</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name} · saldo {money.format(Number(customer.balance))}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div>
+                <input
+                  aria-label="Nombre del nuevo cliente"
+                  value={newCustomer}
+                  onChange={(event) => setNewCustomer(event.target.value)}
+                  placeholder="Alta rápida por nombre"
+                />
+                <button type="button" onClick={createCustomer}>
+                  Crear
+                </button>
+              </div>
             </div>
           )}
           {cashApplied > 0 && (

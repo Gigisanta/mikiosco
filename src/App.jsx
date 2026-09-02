@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { Toast } from './components/Toast'
 import { Topbar } from './components/Topbar'
-import { DEMO_PRODUCTS, PRODUCT_COLORS } from './data/demoData'
+import {
+  createDemoSales,
+  DEMO_CUSTOMERS,
+  DEMO_PRODUCTS,
+  DEMO_SUPPLIERS,
+  PRODUCT_COLORS,
+} from './data/demoData'
 import { exportStockWorkbook, importStockWorkbook } from './excel'
 import { useVersionedStorage } from './hooks/useVersionedStorage'
 import { apiProductToUi, authApi, businessApi } from './lib/api'
@@ -10,12 +16,14 @@ import { formatDateLabel, money } from './lib/format'
 import { roundQuantity, unitStep } from './lib/inventory'
 import { enqueueSale, readPendingSales, syncPendingSales } from './lib/offlineQueue'
 import { CashView } from './views/CashView'
+import { CustomersView } from './views/CustomersView'
 import { DashboardView } from './views/DashboardView'
 import { LoginView } from './views/LoginView'
 import { ProductsView } from './views/ProductsView'
 import { SalesView } from './views/SalesView'
 import { StatisticsView } from './views/StatisticsView'
 import { StockView } from './views/StockView'
+import { SuppliersView } from './views/SuppliersView'
 
 function createId() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -36,24 +44,39 @@ export default function App() {
     'mikiosco-products',
     DEMO_MODE ? DEMO_PRODUCTS : [],
   )
-  const [sales, setSales] = useVersionedStorage('mikiosco-sales', [])
+  const [sales, setSales] = useVersionedStorage(
+    'mikiosco-sales',
+    DEMO_MODE ? createDemoSales() : [],
+  )
+  const [customers, setCustomers] = useVersionedStorage(
+    'mikiosco-customers',
+    DEMO_MODE ? DEMO_CUSTOMERS : [],
+  )
+  const [suppliers, setSuppliers] = useVersionedStorage(
+    'mikiosco-suppliers',
+    DEMO_MODE ? DEMO_SUPPLIERS : [],
+  )
   const [session, setSession] = useState(DEMO_MODE ? demoSession : null)
   const [authReady, setAuthReady] = useState(DEMO_MODE)
   const [cashSession, setCashSession] = useState(null)
   const [online, setOnline] = useState(navigator.onLine)
   const [syncing, setSyncing] = useState(false)
   const [pendingCount, setPendingCount] = useState(() => readPendingSales().length)
+  const [statisticsData, setStatisticsData] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [message, setMessage] = useState(null)
   const fileInput = useRef(null)
 
   const loadServerData = useCallback(async () => {
     try {
-      const [productsResult, salesResult, cashResult] = await Promise.all([
-        businessApi.products(),
-        businessApi.sales(),
-        businessApi.cashSession(),
-      ])
+      const [productsResult, salesResult, cashResult, customersResult, suppliersResult] =
+        await Promise.all([
+          businessApi.products(),
+          businessApi.sales(),
+          businessApi.cashSession(),
+          businessApi.customers(),
+          businessApi.suppliers(),
+        ])
       setProducts(productsResult.items.map(apiProductToUi))
       setSales(
         salesResult.items.map((sale) => ({
@@ -67,11 +90,24 @@ export default function App() {
         })),
       )
       setCashSession(cashResult.session)
+      setCustomers(
+        customersResult.items.map((customer) => ({
+          ...customer,
+          balance: Number(customer.balance),
+          creditLimit: Number(customer.creditLimit),
+        })),
+      )
+      setSuppliers(
+        suppliersResult.items.map((supplier) => ({
+          ...supplier,
+          currentDebt: Number(supplier.currentDebt),
+        })),
+      )
     } catch (error) {
       if (error.status === 401) setSession(null)
       else setMessage({ text: error.message, type: 'error' })
     }
-  }, [setProducts, setSales])
+  }, [setCustomers, setProducts, setSales, setSuppliers])
 
   useEffect(() => {
     if (!message) return undefined
@@ -133,6 +169,24 @@ export default function App() {
     return undefined
   }, [loadServerData, online, pendingCount, session])
 
+  useEffect(() => {
+    if (DEMO_MODE || section !== 'Estadísticas' || session?.user.role === 'CASHIER') {
+      return undefined
+    }
+    let active = true
+    businessApi
+      .statistics()
+      .then((result) => {
+        if (active) setStatisticsData(result)
+      })
+      .catch((error) => {
+        if (active) setMessage({ text: error.message, type: 'error' })
+      })
+    return () => {
+      active = false
+    }
+  }, [section, session?.user.role])
+
   const total = useMemo(
     () => cart.reduce((sum, item) => sum + item.price * Number(item.qty || 0), 0),
     [cart],
@@ -154,6 +208,9 @@ export default function App() {
       setSession(null)
       setProducts([])
       setSales([])
+      setCustomers([])
+      setSuppliers([])
+      setStatisticsData(null)
       setCart([])
     }
   }
@@ -247,6 +304,192 @@ export default function App() {
     notify('Devolución registrada. El producto volvió al stock.')
   }
 
+  async function createCustomer(customer) {
+    let item
+    if (DEMO_MODE) {
+      item = {
+        ...customer,
+        id: createId(),
+        balance: 0,
+        purchaseCount: 0,
+      }
+    } else {
+      const result = await businessApi.createCustomer(customer)
+      item = { ...result.item, balance: Number(result.item.balance) }
+    }
+    setCustomers((current) => [...current, item])
+    notify('Cliente guardado.')
+    return item
+  }
+
+  async function payCustomer(customer, amount) {
+    if (!DEMO_MODE) {
+      await businessApi.payCustomerAccount(customer.id, {
+        amount,
+        method: 'CASH',
+        cashSessionId: cashSession?.id || null,
+      })
+    }
+    setCustomers((current) =>
+      current.map((item) =>
+        item.id === customer.id ? { ...item, balance: Math.max(0, item.balance - amount) } : item,
+      ),
+    )
+    if (!DEMO_MODE) await loadServerData()
+    notify('Cobro registrado en la cuenta del cliente.')
+  }
+
+  async function saveProduct(form) {
+    const payload = {
+      ...form,
+      costPrice: Number(form.costPrice || 0),
+      salePrice: Number(form.salePrice),
+      stock: Number(form.stock || 0),
+      minStock: Number(form.minStock || 0),
+      maxStock: Number(form.maxStock || 0),
+      supplierId: form.supplierId || null,
+    }
+    if (DEMO_MODE) {
+      const mapped = {
+        id: payload.id || createId(),
+        name: payload.name,
+        barcode: payload.barcode,
+        category: payload.categoryName || 'Sin categoría',
+        categoryId: payload.categoryId,
+        supplierId: payload.supplierId,
+        unit: payload.unit,
+        cost: payload.costPrice,
+        price: payload.salePrice,
+        stock: payload.stock,
+        min: payload.minStock,
+        max: payload.maxStock,
+        sold: 0,
+        color: PRODUCT_COLORS[products.length % PRODUCT_COLORS.length],
+        emoji: '📦',
+      }
+      setProducts((current) =>
+        payload.id
+          ? current.map((product) =>
+              product.id === payload.id ? { ...product, ...mapped } : product,
+            )
+          : [...current, mapped],
+      )
+    } else {
+      if (payload.id) await businessApi.updateProduct(payload)
+      else await businessApi.createProduct(payload)
+      await loadServerData()
+    }
+    notify(payload.id ? 'Producto actualizado.' : 'Producto creado.')
+  }
+
+  async function deleteProduct(product) {
+    if (!window.confirm(`¿Querés dar de baja ${product.name}?`)) return
+    if (!DEMO_MODE) await businessApi.deleteProduct(product.id)
+    setProducts((current) => current.filter((item) => item.id !== product.id))
+    notify('Producto dado de baja.')
+  }
+
+  async function updatePrices(change) {
+    if (!DEMO_MODE) {
+      await businessApi.updatePrices(change)
+      await loadServerData()
+    } else {
+      setProducts((current) =>
+        current.map((product) => {
+          const applies =
+            change.scope === 'all' ||
+            (change.scope === 'category' && product.category === change.categoryName) ||
+            (change.scope === 'selected' && change.productIds.includes(product.id))
+          if (!applies) return product
+          const raw = product.price * (1 + change.percentage / 100)
+          const price = change.rounding
+            ? Math.ceil(raw / change.rounding) * change.rounding
+            : Math.round(raw * 100) / 100
+          return { ...product, price }
+        }),
+      )
+    }
+    notify('Precios actualizados.')
+  }
+
+  async function createSupplier(supplier) {
+    const item = DEMO_MODE
+      ? { ...supplier, id: createId(), currentDebt: 0 }
+      : (await businessApi.createSupplier(supplier)).item
+    setSuppliers((current) => [...current, item])
+    notify('Proveedor guardado.')
+  }
+
+  async function createPurchase(purchase) {
+    if (!DEMO_MODE) {
+      await businessApi.createPurchase(purchase)
+      await loadServerData()
+    } else {
+      const line = purchase.items[0]
+      setProducts((current) =>
+        current.map((product) =>
+          String(product.id) === String(line.productId)
+            ? {
+                ...product,
+                stock: roundQuantity(product.stock + line.quantity),
+                cost: line.unitCost,
+              }
+            : product,
+        ),
+      )
+      const debt = line.quantity * line.unitCost - purchase.paidAmount
+      setSuppliers((current) =>
+        current.map((supplier) =>
+          supplier.id === purchase.supplierId
+            ? { ...supplier, currentDebt: Number(supplier.currentDebt) + debt }
+            : supplier,
+        ),
+      )
+    }
+    notify('Ingreso de mercadería registrado.')
+  }
+
+  async function paySupplier(supplierId, amount, method) {
+    if (!DEMO_MODE) {
+      await businessApi.paySupplier(supplierId, {
+        amount,
+        method,
+        cashSessionId: method === 'CASH' ? cashSession?.id || null : null,
+      })
+      await loadServerData()
+    } else {
+      setSuppliers((current) =>
+        current.map((supplier) =>
+          supplier.id === supplierId
+            ? { ...supplier, currentDebt: Math.max(0, Number(supplier.currentDebt) - amount) }
+            : supplier,
+        ),
+      )
+    }
+    notify('Pago al proveedor registrado.')
+  }
+
+  async function saveStockProduct(product) {
+    if (!DEMO_MODE) {
+      await businessApi.updateProduct({
+        id: product.id,
+        name: product.name,
+        barcode: product.barcode,
+        categoryId: product.categoryId,
+        categoryName: product.category,
+        supplierId: product.supplierId,
+        unit: product.unit,
+        costPrice: product.cost,
+        salePrice: product.price,
+        stock: product.stock,
+        minStock: product.min,
+        maxStock: product.max,
+      })
+      await loadServerData()
+    }
+    notify('Límites y stock actualizados.')
+  }
+
   function addProduct(product, requestedQuantity) {
     if (product.stock <= 0) {
       notify(`${product.name} está sin stock.`, 'error')
@@ -322,6 +565,8 @@ export default function App() {
       payments: checkout.payments,
       cashReceived: checkout.cashReceived,
       change: checkout.change,
+      customerId: checkout.customerId,
+      customerName: customers.find((customer) => customer.id === checkout.customerId)?.name,
       items: cart.map((item) => ({
         id: item.id,
         name: item.name,
@@ -339,6 +584,7 @@ export default function App() {
       const payload = {
         idempotencyKey: createId(),
         cashSessionId: cashSession.id,
+        customerId: checkout.customerId,
         items: cart.map((item) => ({
           productId: item.id,
           name: item.name,
@@ -378,6 +624,22 @@ export default function App() {
       }),
     )
     setSales((current) => [...current, localSale])
+    const accountAmount = checkout.payments
+      .filter((entry) => entry.method === 'ACCOUNT')
+      .reduce((sum, entry) => sum + entry.amount, 0)
+    if (DEMO_MODE && checkout.customerId && accountAmount) {
+      setCustomers((current) =>
+        current.map((customer) =>
+          customer.id === checkout.customerId
+            ? {
+                ...customer,
+                balance: Number(customer.balance) + accountAmount,
+                purchaseCount: Number(customer.purchaseCount || 0) + 1,
+              }
+            : customer,
+        ),
+      )
+    }
     setCart([])
     setSaleDone(localSale)
     notify(`Venta registrada por ${money.format(checkout.total)}.`)
@@ -396,6 +658,26 @@ export default function App() {
     if (!file) return
     try {
       const { items, errors } = await importStockWorkbook(file)
+      if (!DEMO_MODE) {
+        const result = await businessApi.updateStock(
+          items.map((item) => ({
+            barcode: item.barcode,
+            name: item.name,
+            unit: item.unit,
+            stock: item.stock,
+            minStock: item.min,
+            maxStock: item.max,
+            costPrice: item.cost,
+            salePrice: item.price,
+          })),
+        )
+        await loadServerData()
+        const omitted = errors.length ? ` Se omitieron ${errors.length} filas.` : ''
+        notify(
+          `Excel aplicado: ${result.updated} actualizados y ${result.created} nuevos.${omitted}`,
+        )
+        return
+      }
       let created = 0
       let updated = 0
       setProducts((current) => {
@@ -477,6 +759,7 @@ export default function App() {
         {section === 'Ventas' && (
           <SalesView
             products={products}
+            customers={customers}
             query={query}
             setQuery={setQuery}
             cart={cart}
@@ -488,22 +771,67 @@ export default function App() {
             changeQuantity={changeQuantity}
             clearCart={clearCart}
             finishSale={finishSale}
+            onCreateCustomer={createCustomer}
             canSell={session.user.role !== 'VIEWER'}
           />
         )}
         {section === 'Resumen' && (
-          <DashboardView products={products} sales={sales} onNavigate={setSection} />
+          <DashboardView
+            products={products}
+            sales={sales}
+            onNavigate={setSection}
+            demoMode={DEMO_MODE}
+          />
         )}
-        {section === 'Productos' && <ProductsView products={products} />}
+        {section === 'Productos' && (
+          <ProductsView
+            products={products}
+            suppliers={suppliers}
+            canEdit={session.user.role === 'ADMIN'}
+            demoMode={DEMO_MODE}
+            onSave={saveProduct}
+            onDelete={deleteProduct}
+            onBulk={updatePrices}
+          />
+        )}
         {section === 'Stock' && (
           <StockView
             products={products}
             updateProduct={updateProduct}
+            onSave={saveStockProduct}
             onImport={() => fileInput.current?.click()}
             onExport={() => exportStockWorkbook(products)}
+            canEdit={session.user.role !== 'VIEWER'}
           />
         )}
-        {section === 'Estadísticas' && <StatisticsView products={products} sales={sales} />}
+        {section === 'Estadísticas' && (
+          <StatisticsView
+            data={statisticsData}
+            sales={sales}
+            demoMode={DEMO_MODE}
+            loading={!DEMO_MODE && !statisticsData}
+          />
+        )}
+        {section === 'Clientes' && (
+          <CustomersView
+            customers={customers}
+            demoMode={DEMO_MODE}
+            canEdit={session.user.role !== 'VIEWER'}
+            onCreate={createCustomer}
+            onPay={payCustomer}
+          />
+        )}
+        {section === 'Proveedores' && (
+          <SuppliersView
+            suppliers={suppliers}
+            products={products}
+            demoMode={DEMO_MODE}
+            canEdit={session.user.role === 'ADMIN'}
+            onCreate={createSupplier}
+            onPurchase={createPurchase}
+            onPay={paySupplier}
+          />
+        )}
         {section === 'Caja' && (
           <CashView
             sales={sales}

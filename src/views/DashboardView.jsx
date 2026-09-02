@@ -2,20 +2,20 @@ import { AlertTriangle, ArrowDownToLine, ShoppingBag } from 'lucide-react'
 import { Metric } from '../components/Metric'
 import { money } from '../lib/format'
 
-export function DashboardView({ products, sales, onNavigate }) {
+export function DashboardView({ products, sales, onNavigate, demoMode }) {
   const low = products.filter((product) => product.stock <= product.min)
   const todayRevenue = sales.reduce((sum, sale) => sum + sale.total, 0)
   const average = sales.length ? todayRevenue / sales.length : 0
 
   return (
     <section className="management">
-      <div className="demo-label">Datos de esta demostración</div>
+      {demoMode && <div className="demo-label">Datos de ejemplo</div>}
       <div className="metric-grid">
         <Metric
           icon={<ArrowDownToLine />}
           label="Ventas registradas"
           value={money.format(todayRevenue)}
-          detail="En este navegador"
+          detail={demoMode ? 'En este navegador' : 'Datos compartidos de la sucursal'}
         />
         <Metric
           icon={<ShoppingBag />}

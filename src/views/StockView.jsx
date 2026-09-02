@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   AlertTriangle,
   CircleDollarSign,
@@ -5,12 +6,16 @@ import {
   FileSpreadsheet,
   TrendingUp,
   Upload,
+  Save,
 } from 'lucide-react'
 import { Metric } from '../components/Metric'
 import { money } from '../lib/format'
 import { marginPercent, stockStatus, unitStep } from '../lib/inventory'
 
-export function StockView({ products, updateProduct, onImport, onExport }) {
+export function StockView({ products, updateProduct, onSave, onImport, onExport, canEdit }) {
+  const [dirty, setDirty] = useState([])
+  const [saving, setSaving] = useState(null)
+  const [error, setError] = useState('')
   const low = products.filter((product) => product.stock <= product.min)
   const inventoryCost = products.reduce((sum, product) => sum + product.cost * product.stock, 0)
   const potentialMargin = products.reduce(
@@ -26,7 +31,7 @@ export function StockView({ products, updateProduct, onImport, onExport }) {
           <a className="secondary-action" href="/plantilla-stock-mikiosco.xlsx" download>
             <FileSpreadsheet size={18} /> Plantilla
           </a>
-          <button className="secondary-action" onClick={onImport}>
+          <button className="secondary-action" onClick={onImport} disabled={!canEdit}>
             <Upload size={18} /> Importar Excel
           </button>
           <button className="primary" onClick={onExport}>
@@ -68,6 +73,7 @@ export function StockView({ products, updateProduct, onImport, onExport }) {
               <th>Venta</th>
               <th>Margen</th>
               <th>Estado</th>
+              {canEdit && <th>Acción</th>}
             </tr>
           </thead>
           <tbody>
@@ -93,10 +99,16 @@ export function StockView({ products, updateProduct, onImport, onExport }) {
                         step={unitStep(product.unit)}
                         min="0"
                         value={product[field]}
+                        disabled={!canEdit}
                         onChange={(event) =>
-                          updateProduct(product.id, {
-                            [field]: Math.max(0, Number(event.target.value)),
-                          })
+                          (() => {
+                            updateProduct(product.id, {
+                              [field]: Math.max(0, Number(event.target.value)),
+                            })
+                            setDirty((current) =>
+                              current.includes(product.id) ? current : [...current, product.id],
+                            )
+                          })()
                         }
                       />
                     </td>
@@ -112,12 +124,39 @@ export function StockView({ products, updateProduct, onImport, onExport }) {
                   <td>
                     <span className={`status-badge ${status.level}`}>{status.label}</span>
                   </td>
+                  {canEdit && (
+                    <td>
+                      <button
+                        className="table-save"
+                        disabled={!dirty.includes(product.id) || saving === product.id}
+                        onClick={async () => {
+                          setSaving(product.id)
+                          try {
+                            setError('')
+                            await onSave(product)
+                            setDirty((current) => current.filter((id) => id !== product.id))
+                          } catch (requestError) {
+                            setError(requestError.message)
+                          } finally {
+                            setSaving(null)
+                          }
+                        }}
+                      >
+                        <Save size={15} /> {saving === product.id ? 'Guardando' : 'Guardar'}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               )
             })}
           </tbody>
         </table>
       </div>
+      {error && (
+        <div className="form-error owner-error" role="alert">
+          {error}
+        </div>
+      )}
       <p className="table-note">
         Las cantidades admiten decimales para kg, litros y metros. El máximo en 0 significa sin
         tope.

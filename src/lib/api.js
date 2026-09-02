@@ -40,6 +40,22 @@ export const authApi = {
 
 export const businessApi = {
   products: () => apiRequest('/api/products'),
+  createProduct: (product) => apiRequest('/api/products', { method: 'POST', body: product }),
+  updateProduct: (product) => apiRequest('/api/products', { method: 'PATCH', body: product }),
+  deleteProduct: (id) => apiRequest(`/api/products?id=${id}`, { method: 'DELETE' }),
+  updatePrices: (change) => apiRequest('/api/prices', { method: 'PATCH', body: change }),
+  customers: () => apiRequest('/api/customers'),
+  createCustomer: (customer) => apiRequest('/api/customers', { method: 'POST', body: customer }),
+  customerDetails: (id) => apiRequest(`/api/customers/${id}`),
+  payCustomerAccount: (id, payment) =>
+    apiRequest(`/api/customers/${id}/payments`, { method: 'POST', body: payment }),
+  suppliers: () => apiRequest('/api/suppliers'),
+  createSupplier: (supplier) => apiRequest('/api/suppliers', { method: 'POST', body: supplier }),
+  paySupplier: (id, payment) =>
+    apiRequest(`/api/suppliers/${id}/payments`, { method: 'POST', body: payment }),
+  purchases: () => apiRequest('/api/purchases'),
+  createPurchase: (purchase) => apiRequest('/api/purchases', { method: 'POST', body: purchase }),
+  updateStock: (items) => apiRequest('/api/stock', { method: 'PATCH', body: { items } }),
   sales: () => apiRequest('/api/sales?limit=100'),
   createSale: (sale) => apiRequest('/api/sales', { method: 'POST', body: sale }),
   statistics: () => apiRequest('/api/statistics?months=12'),
@@ -61,6 +77,8 @@ export function apiProductToUi(product) {
     barcode: product.barcode || '',
     name: product.name,
     category: product.categoryName || 'Sin categoría',
+    categoryId: product.categoryId || null,
+    supplierId: product.supplierId || null,
     unit: product.unit,
     price: Number(product.salePrice),
     cost: Number(product.costPrice),
