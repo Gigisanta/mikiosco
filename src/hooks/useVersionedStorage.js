@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-const CURRENT_SCHEMA_VERSION = 2
+const CURRENT_SCHEMA_VERSION = 3
 
 function readStoredValue(key, fallback) {
   try {

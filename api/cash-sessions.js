@@ -15,7 +15,11 @@ async function handler(request, response) {
         COALESCE((SELECT SUM(e.amount) FROM cash_expenses e
           WHERE e.cash_session_id=cs.id),0) AS expenses,
         COALESCE((SELECT SUM(sr.total) FROM sale_returns sr JOIN sales s ON s.id=sr.sale_id
-          WHERE s.cash_session_id=cs.id AND sr.refund_method='CASH'),0) AS "cashReturns"
+          WHERE s.cash_session_id=cs.id AND sr.refund_method='CASH'),0) AS "cashReturns",
+        COALESCE((SELECT SUM(cap.amount) FROM customer_account_payments cap
+          WHERE cap.cash_session_id=cs.id AND cap.method='CASH'),0) AS "accountCollections"
+        ,COALESCE((SELECT SUM(sp.amount) FROM supplier_payments sp
+          WHERE sp.cash_session_id=cs.id AND sp.method='CASH'),0) AS "supplierPayments"
        FROM cash_sessions cs JOIN users u ON u.id=cs.opened_by
        WHERE cs.branch_id=$1 AND cs.status='OPEN'
        ORDER BY cs.opened_at DESC LIMIT 1`,
@@ -61,7 +65,11 @@ async function handler(request, response) {
             WHERE s.cash_session_id=cs.id AND s.status='COMPLETED' AND p.method='CASH'),0) AS cash_sales,
           COALESCE((SELECT SUM(e.amount) FROM cash_expenses e WHERE e.cash_session_id=cs.id),0) AS expenses,
           COALESCE((SELECT SUM(sr.total) FROM sale_returns sr JOIN sales s ON s.id=sr.sale_id
-            WHERE s.cash_session_id=cs.id AND sr.refund_method='CASH'),0) AS cash_returns
+            WHERE s.cash_session_id=cs.id AND sr.refund_method='CASH'),0) AS cash_returns,
+          COALESCE((SELECT SUM(cap.amount) FROM customer_account_payments cap
+            WHERE cap.cash_session_id=cs.id AND cap.method='CASH'),0) AS account_collections,
+          COALESCE((SELECT SUM(sp.amount) FROM supplier_payments sp
+            WHERE sp.cash_session_id=cs.id AND sp.method='CASH'),0) AS supplier_payments
          FROM cash_sessions cs WHERE cs.id=$1 AND cs.branch_id=$2 AND cs.status='OPEN' FOR UPDATE`,
         [request.body?.id, user.branchId],
       )
@@ -72,7 +80,9 @@ async function handler(request, response) {
         Number(found.rows[0].opening_amount) +
         Number(found.rows[0].cash_sales) -
         Number(found.rows[0].expenses) -
-        Number(found.rows[0].cash_returns)
+        Number(found.rows[0].cash_returns) +
+        Number(found.rows[0].account_collections) -
+        Number(found.rows[0].supplier_payments)
       const difference = closingAmount - expected
       const result = await client.query(
         `UPDATE cash_sessions SET status='CLOSED',closed_by=$1,closed_at=now(),

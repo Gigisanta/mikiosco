@@ -57,7 +57,9 @@ export function CashView({
     Number(session?.openingAmount || 0) +
     cashSales -
     expenseTotal -
-    Number(session?.cashReturns || 0)
+    Number(session?.cashReturns || 0) +
+    Number(session?.accountCollections || 0) -
+    Number(session?.supplierPayments || 0)
   const filteredSales = [...sales].reverse().filter((sale) => {
     const text = [
       sale.ticketNumber,

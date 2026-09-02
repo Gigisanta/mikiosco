@@ -5,6 +5,8 @@ import {
   LogOut,
   PackageCheck,
   ShoppingBag,
+  Truck,
+  UsersRound,
   WalletCards,
 } from 'lucide-react'
 
@@ -13,6 +15,8 @@ const items = [
   [ShoppingBag, 'Ventas'],
   [Box, 'Productos'],
   [PackageCheck, 'Stock'],
+  [UsersRound, 'Clientes'],
+  [Truck, 'Proveedores'],
   [BarChart3, 'Estadísticas'],
   [WalletCards, 'Caja'],
 ]

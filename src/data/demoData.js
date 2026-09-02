@@ -121,19 +121,79 @@ export const DEMO_PRODUCTS = [
   },
 ]
 
-export const DEMO_MONTHS = [
-  ['Oct', 684000, 263000],
-  ['Nov', 721000, 281000],
-  ['Dic', 896000, 361000],
-  ['Ene', 748000, 292000],
-  ['Feb', 779000, 305000],
-  ['Mar', 842000, 329000],
-  ['Abr', 824000, 316000],
-  ['May', 907000, 354000],
-  ['Jun', 938000, 369000],
-  ['Jul', 1012000, 402000],
-  ['Ago', 1086000, 428000],
-  ['Sep', 84600, 33100],
-]
+export function createDemoSales() {
+  const payments = ['CASH', 'CARD', 'TRANSFER']
+  const sales = []
+  for (let monthOffset = 11; monthOffset >= 0; monthOffset -= 1) {
+    for (let ticket = 0; ticket < 6; ticket += 1) {
+      const date = new Date()
+      date.setDate(3 + ticket * 4)
+      date.setMonth(date.getMonth() - monthOffset)
+      date.setHours(9 + ticket, 12, 0, 0)
+      const chosen = [
+        DEMO_PRODUCTS[(ticket + monthOffset) % DEMO_PRODUCTS.length],
+        DEMO_PRODUCTS[(ticket * 2 + monthOffset + 2) % DEMO_PRODUCTS.length],
+      ]
+      const items = chosen.map((product, index) => {
+        const quantity = product.unit === 'kg' ? 0.25 + index * 0.25 : 1 + ((ticket + index) % 3)
+        return {
+          id: product.id,
+          productId: product.id,
+          name: product.name,
+          category: product.category,
+          quantity,
+          total: product.price * quantity,
+          margin: (product.price - product.cost) * quantity,
+        }
+      })
+      const total = items.reduce((sum, item) => sum + item.total, 0)
+      const margin = items.reduce((sum, item) => sum + item.margin, 0)
+      sales.push({
+        id: `demo-${monthOffset}-${ticket}`,
+        ticketNumber: sales.length + 1,
+        date: date.toISOString(),
+        total,
+        subtotal: total,
+        discount: 0,
+        cost: total - margin,
+        payment: payments[ticket % payments.length],
+        status: 'COMPLETED',
+        items,
+      })
+    }
+  }
+  return sales
+}
 
 export const PRODUCT_COLORS = ['#d8edf9', '#f4e1c4', '#dcebc5', '#dfd9f2', '#f7d7d7']
+
+export const DEMO_CUSTOMERS = [
+  {
+    id: 'customer-1',
+    name: 'Marina Sosa',
+    phone: '11 4820 1934',
+    document: '',
+    creditLimit: 30000,
+    balance: 8400,
+    purchaseCount: 4,
+  },
+  {
+    id: 'customer-2',
+    name: 'Leo Benítez',
+    phone: '11 5931 8072',
+    document: '',
+    creditLimit: 20000,
+    balance: 0,
+    purchaseCount: 2,
+  },
+]
+
+export const DEMO_SUPPLIERS = [
+  {
+    id: 'supplier-1',
+    name: 'Distribuidora del Sur',
+    phone: '11 4302 4187',
+    email: 'pedidos@delsur.example',
+    currentDebt: 0,
+  },
+]

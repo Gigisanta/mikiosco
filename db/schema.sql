@@ -25,9 +25,13 @@ CREATE TABLE purchase_orders (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), bra
 CREATE TABLE purchase_items (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), purchase_order_id uuid NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE, product_id uuid NOT NULL REFERENCES products(id), quantity numeric(14,3) NOT NULL CHECK(quantity > 0), unit_cost numeric(14,2) NOT NULL CHECK(unit_cost >= 0), total numeric(14,2) NOT NULL CHECK(total >= 0));
 CREATE TABLE sale_returns (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), sale_id uuid NOT NULL REFERENCES sales(id), user_id uuid NOT NULL REFERENCES users(id), total numeric(14,2) NOT NULL CHECK(total > 0), refund_method payment_method NOT NULL DEFAULT 'CASH', note text, created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE sale_return_items (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), sale_return_id uuid NOT NULL REFERENCES sale_returns(id) ON DELETE CASCADE, sale_item_id uuid NOT NULL REFERENCES sale_items(id), quantity numeric(14,3) NOT NULL CHECK(quantity > 0), total numeric(14,2) NOT NULL CHECK(total > 0));
+CREATE TABLE customer_account_payments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), customer_id uuid NOT NULL REFERENCES customers(id), user_id uuid NOT NULL REFERENCES users(id), cash_session_id uuid REFERENCES cash_sessions(id), method payment_method NOT NULL DEFAULT 'CASH', amount numeric(14,2) NOT NULL CHECK(amount > 0), note text, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE supplier_payments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), supplier_id uuid NOT NULL REFERENCES suppliers(id), user_id uuid NOT NULL REFERENCES users(id), cash_session_id uuid REFERENCES cash_sessions(id), method payment_method NOT NULL DEFAULT 'CASH', amount numeric(14,2) NOT NULL CHECK(amount > 0), note text, created_at timestamptz NOT NULL DEFAULT now());
 CREATE INDEX products_branch_search_idx ON products(branch_id, name);
 CREATE INDEX sales_branch_created_idx ON sales(branch_id, created_at DESC);
 CREATE UNIQUE INDEX sales_branch_idempotency_idx ON sales(branch_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX stock_movements_product_created_idx ON stock_movements(product_id, created_at DESC);
 CREATE INDEX purchases_branch_created_idx ON purchase_orders(branch_id, created_at DESC);
 CREATE INDEX sale_returns_sale_idx ON sale_returns(sale_id, created_at DESC);
+CREATE INDEX customer_payments_customer_idx ON customer_account_payments(customer_id, created_at DESC);
+CREATE INDEX supplier_payments_supplier_idx ON supplier_payments(supplier_id, created_at DESC);
