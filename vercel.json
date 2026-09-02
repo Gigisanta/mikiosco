@@ -1,4 +1,22 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/api/auth/login", "destination": "/api/auth/me" },
+    { "source": "/api/auth/logout", "destination": "/api/auth/me" },
+    { "source": "/api/backup", "destination": "/api/statistics" },
+    { "source": "/api/prices", "destination": "/api/statistics" },
+    {
+      "source": "/api/customers/:id/payments",
+      "destination": "/api/sales/:id"
+    },
+    {
+      "source": "/api/customers/:id",
+      "destination": "/api/sales/:id"
+    },
+    {
+      "source": "/api/suppliers/:id/payments",
+      "destination": "/api/sales/:id"
+    }
+  ]
 }
