@@ -31,6 +31,17 @@ El frontend inicia en modo demostración por defecto para permitir recorridos co
 Aplicá, en orden, los archivos de `db/migrations/` sobre una base existente. Para una instalación
 nueva también podés ejecutar `db/schema.sql`.
 
+Para crear la primera organización, sucursal y administrador después de aplicar el esquema:
+
+```bash
+node --env-file=.env.local scripts/setup-schema.mjs
+DATABASE_URL=postgresql://... ADMIN_EMAIL=admin@kiosco.com ADMIN_PASSWORD=una-clave-segura npm run create-admin
+```
+
+En producción, la información compartida se refresca cada 12 segundos y al volver a la pestaña.
+Los administradores pueden descargar un respaldo JSON completo desde Resumen. Recomendamos además
+habilitar los backups automáticos del proveedor PostgreSQL.
+
 ## Módulos incluidos
 
 - Punto de venta con pagos mixtos, vuelto y ticket imprimible.

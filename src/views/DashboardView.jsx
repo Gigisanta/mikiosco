@@ -1,8 +1,15 @@
-import { AlertTriangle, ArrowDownToLine, Clock3, ShoppingBag, WalletCards } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowDownToLine,
+  Clock3,
+  Download,
+  ShoppingBag,
+  WalletCards,
+} from 'lucide-react'
 import { Metric } from '../components/Metric'
 import { money } from '../lib/format'
 
-export function DashboardView({ products, sales, onNavigate, demoMode, cashSession }) {
+export function DashboardView({ products, sales, onNavigate, demoMode, cashSession, onBackup }) {
   const low = products.filter((product) => product.stock <= product.min)
   const todayKey = new Date().toDateString()
   const todaySales = sales.filter(
@@ -24,7 +31,12 @@ export function DashboardView({ products, sales, onNavigate, demoMode, cashSessi
 
   return (
     <section className="management">
-      {demoMode && <div className="demo-label">Datos de ejemplo</div>}
+      <div className="dashboard-actions">
+        {demoMode && <div className="demo-label">Datos de ejemplo</div>}
+        <button className="secondary-action" onClick={onBackup}>
+          <Download size={17} /> Descargar respaldo
+        </button>
+      </div>
       <div className="metric-grid">
         <Metric
           icon={<ArrowDownToLine />}
