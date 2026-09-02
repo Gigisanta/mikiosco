@@ -149,7 +149,7 @@ export async function exportStockWorkbook(products) {
   const guideData = [
     [
       {
-        value: 'MiKiosco — Exportación de stock',
+        value: 'MiKiosco | Exportación de stock',
         fontWeight: 'bold',
         fontSize: 16,
         textColor: '#087B56',

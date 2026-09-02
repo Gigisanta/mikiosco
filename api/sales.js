@@ -7,8 +7,10 @@ async function listSales(user, request, response) {
   const result = await dbQuery(
     `SELECT s.id, s.ticket_number AS "ticketNumber", s.status, s.subtotal, s.discount,
       s.total, s.created_at AS "createdAt", s.customer_id AS "customerId",
-      COALESCE(json_agg(json_build_object('productId',si.product_id,'name',si.product_name,
-        'quantity',si.quantity,'unitPrice',si.unit_price,'unitCost',si.unit_cost,'total',si.total))
+      COALESCE(json_agg(json_build_object('id',si.id,'productId',si.product_id,'name',si.product_name,
+        'quantity',si.quantity,'unitPrice',si.unit_price,'unitCost',si.unit_cost,'total',si.total,
+        'returnedQuantity',COALESCE((SELECT SUM(sri.quantity) FROM sale_return_items sri
+          WHERE sri.sale_item_id=si.id),0)))
         FILTER (WHERE si.id IS NOT NULL), '[]') AS items
      FROM sales s LEFT JOIN sale_items si ON si.sale_id=s.id
      WHERE s.branch_id=$1 GROUP BY s.id ORDER BY s.created_at DESC LIMIT $2`,
@@ -48,7 +50,9 @@ async function createSale(user, request, response) {
       if (!cashSession.rowCount) throw new Error('La caja indicada no está abierta.')
 
       const preparedItems = []
-      for (const item of items) {
+      for (const item of [...items].sort((a, b) =>
+        String(a.productId).localeCompare(String(b.productId)),
+      )) {
         const quantity = Number(item.quantity)
         if (!Number.isFinite(quantity) || quantity <= 0) {
           throw new Error('Todas las cantidades deben ser mayores a cero.')
