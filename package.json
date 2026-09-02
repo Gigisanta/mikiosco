@@ -10,7 +10,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "create-admin": "node scripts/create-admin.mjs",
+    "db:setup": "node scripts/setup-schema.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "6.1.1",

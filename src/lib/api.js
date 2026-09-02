@@ -39,6 +39,7 @@ export const authApi = {
 }
 
 export const businessApi = {
+  backup: () => apiRequest('/api/backup'),
   products: () => apiRequest('/api/products'),
   createProduct: (product) => apiRequest('/api/products', { method: 'POST', body: product }),
   updateProduct: (product) => apiRequest('/api/products', { method: 'PATCH', body: product }),

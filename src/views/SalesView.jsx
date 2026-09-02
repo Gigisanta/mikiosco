@@ -14,6 +14,7 @@ import {
   WalletCards,
 } from 'lucide-react'
 import { money, number } from '../lib/format'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { stockStatus, unitLabel, unitStep } from '../lib/inventory'
 import { calculateChange, closestTender, normalizeMoney, parseScannerQuery } from '../lib/pos'
 import { categoryTone, productInitials } from '../lib/productAppearance'
@@ -62,23 +63,40 @@ export function SalesView({
   )
   const [scannerActive, setScannerActive] = useState(false)
   const [flashId, setFlashId] = useState(null)
+  const [catalogLimit, setCatalogLimit] = useState(300)
   const searchRef = useRef(null)
   const discountRef = useRef(null)
   const firstProductRef = useRef(null)
   const lineRefs = useRef(new Map())
   const scannerTimer = useRef(null)
 
+  const debouncedQuery = useDebouncedValue(query, 120)
+  const searchableProducts = useMemo(
+    () =>
+      products.map((product) => ({
+        ...product,
+        searchText: [product.name, product.barcode, product.category]
+          .join(' ')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase(),
+      })),
+    [products],
+  )
   const categories = [...new Set(products.map((product) => product.category))].sort()
   const visibleProducts = useMemo(
     () =>
-      products.filter(
-        (product) =>
+      searchableProducts.filter((product) => {
+        const normalizedQuery = debouncedQuery
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+        return (
           (category === 'Todos' || product.category === category) &&
-          [product.name, product.barcode].some((value) =>
-            String(value).toLowerCase().includes(query.toLowerCase()),
-          ),
-      ),
-    [category, products, query],
+          product.searchText.includes(normalizedQuery)
+        )
+      }),
+    [category, debouncedQuery, searchableProducts],
   )
   const safeDiscount = Math.min(total, normalizeMoney(discount))
   const amountDue = normalizeMoney(total - safeDiscount)
@@ -304,7 +322,7 @@ export function SalesView({
           </div>
         </div>
         <div className={`product-grid ${catalogMode === 'list' ? 'list-mode' : ''}`}>
-          {visibleProducts.map((product, index) => {
+          {visibleProducts.slice(0, catalogLimit).map((product, index) => {
             const status = stockStatus(product)
             return (
               <button
@@ -339,6 +357,11 @@ export function SalesView({
             )
           })}
         </div>
+        {visibleProducts.length > catalogLimit && (
+          <button className="load-more" onClick={() => setCatalogLimit((value) => value + 300)}>
+            Mostrar 300 productos más
+          </button>
+        )}
       </div>
 
       <aside className="cart-panel">

@@ -6,6 +6,7 @@ import { createDemoSales, DEMO_CUSTOMERS, DEMO_PRODUCTS, DEMO_SUPPLIERS } from '
 import { exportStockWorkbook, importStockWorkbook } from './excel'
 import { useVersionedStorage } from './hooks/useVersionedStorage'
 import { apiProductToUi, authApi, businessApi } from './lib/api'
+import { createDemoBackup, downloadBackup } from './lib/backup'
 import { formatDateLabel, money } from './lib/format'
 import { roundQuantity, unitStep } from './lib/inventory'
 import { enqueueSale, readPendingSales, syncPendingSales } from './lib/offlineQueue'
@@ -146,6 +147,19 @@ export default function App() {
   }, [loadServerData, session])
 
   useEffect(() => {
+    if (DEMO_MODE || !session || !online) return undefined
+    const refresh = () => {
+      if (document.visibilityState === 'visible' && !syncing) void loadServerData()
+    }
+    const timer = window.setInterval(refresh, 12000)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [loadServerData, online, session, syncing])
+
+  useEffect(() => {
     if (DEMO_MODE || !session || !online || !pendingCount) return undefined
     async function synchronize() {
       setSyncing(true)
@@ -188,8 +202,34 @@ export default function App() {
   )
   const lowStock = products.filter((product) => product.stock <= product.min)
 
+  useEffect(() => {
+    if (!DEMO_MODE || !session) return undefined
+    const today = new Date().toISOString().slice(0, 10)
+    if (localStorage.getItem('mikiosco-auto-backup-date') === today) return undefined
+    const timer = window.setTimeout(() => {
+      localStorage.setItem(
+        'mikiosco-auto-backup',
+        JSON.stringify(createDemoBackup({ products, sales, customers, suppliers })),
+      )
+      localStorage.setItem('mikiosco-auto-backup-date', today)
+    }, 1000)
+    return () => window.clearTimeout(timer)
+  }, [customers, products, sales, session, suppliers])
+
   function notify(text, type = 'success') {
     setMessage({ text, type })
+  }
+
+  async function exportBackup() {
+    try {
+      const backup = DEMO_MODE
+        ? createDemoBackup({ products, sales, customers, suppliers })
+        : await businessApi.backup()
+      downloadBackup(backup)
+      notify('Respaldo completo descargado.')
+    } catch (error) {
+      notify(error.message || 'No se pudo generar el respaldo.', 'error')
+    }
   }
 
   function handleLogin(result) {
@@ -775,6 +815,7 @@ export default function App() {
             onNavigate={setSection}
             demoMode={DEMO_MODE}
             cashSession={cashSession}
+            onBackup={exportBackup}
           />
         )}
         {section === 'Productos' && (
