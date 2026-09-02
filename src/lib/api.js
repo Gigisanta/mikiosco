@@ -59,7 +59,8 @@ export const businessApi = {
   updateStock: (items) => apiRequest('/api/stock', { method: 'PATCH', body: { items } }),
   sales: () => apiRequest('/api/sales?limit=100'),
   createSale: (sale) => apiRequest('/api/sales', { method: 'POST', body: sale }),
-  statistics: () => apiRequest('/api/statistics?months=12'),
+  statistics: (month = '') =>
+    apiRequest(`/api/statistics?months=60${month ? `&month=${encodeURIComponent(month)}` : ''}`),
   cashSession: () => apiRequest('/api/cash-sessions'),
   openCashSession: (openingAmount) =>
     apiRequest('/api/cash-sessions', { method: 'POST', body: { openingAmount } }),

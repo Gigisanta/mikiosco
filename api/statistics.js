@@ -128,62 +128,217 @@ async function handler(request, response) {
   if (pathname.endsWith('/backup')) return createBackup(request, response, user)
   if (request.method !== 'GET') return methodNotAllowed(response, ['GET'])
 
-  const months = Math.min(24, Math.max(1, Number(request.query.months || 12)))
-  const netItems = `WITH net_items AS (
-    SELECT si.*,
-      si.quantity - COALESCE((SELECT SUM(sri.quantity) FROM sale_return_items sri
-        JOIN sale_returns sr ON sr.id=sri.sale_return_id
-        WHERE sri.sale_item_id=si.id),0) AS net_quantity
-    FROM sale_items si
-  )`
-  const [monthly, bestSellers, bestMargins, categories] = await Promise.all([
-    dbQuery(
-      `${netItems}
-       SELECT date_trunc('month', s.created_at) AS month,
+  const requestedMonths = Number(request.query.months || 60)
+  const months = Number.isFinite(requestedMonths)
+    ? Math.min(120, Math.max(12, Math.trunc(requestedMonths)))
+    : 60
+  const requestedMonth = String(request.query.month || '')
+  const selectedMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth)
+    ? requestedMonth
+    : new Date().toISOString().slice(0, 7)
+
+  const monthly = await dbQuery(
+    `WITH month_axis AS (
+      SELECT generate_series(
+        date_trunc('month', now()) - ($2::int - 1) * interval '1 month',
+        date_trunc('month', now()),
+        interval '1 month'
+      ) AS month
+    ), returned AS (
+      SELECT sri.sale_item_id, SUM(sri.quantity) AS quantity
+      FROM sale_return_items sri
+      JOIN sale_returns sr ON sr.id=sri.sale_return_id
+      JOIN sale_items rsi ON rsi.id=sri.sale_item_id
+      JOIN sales rs ON rs.id=rsi.sale_id
+      WHERE rs.branch_id=$1
+      GROUP BY sri.sale_item_id
+    ), net_items AS (
+      SELECT si.*,
+        GREATEST(si.quantity - COALESCE(r.quantity, 0), 0) AS net_quantity
+      FROM sale_items si
+      LEFT JOIN returned r ON r.sale_item_id=si.id
+    ), sales_monthly AS (
+      SELECT date_trunc('month', s.created_at) AS month,
         SUM(ni.unit_price * ni.net_quantity)::numeric AS revenue,
-        SUM((ni.unit_price - ni.unit_cost) * ni.net_quantity)::numeric AS profit,
-        COUNT(DISTINCT s.id)::int AS tickets
-       FROM sales s JOIN net_items ni ON ni.sale_id = s.id
-       WHERE s.branch_id=$1 AND s.status='COMPLETED' AND s.created_at >= date_trunc('month', now()) - ($2::int - 1) * interval '1 month'
-        AND ni.net_quantity > 0 GROUP BY 1 ORDER BY 1`,
-      [user.branchId, months],
-    ),
+        SUM(ni.unit_cost * ni.net_quantity)::numeric AS "costOfGoods",
+        SUM((ni.unit_price - ni.unit_cost) * ni.net_quantity)::numeric AS "grossProfit",
+        COUNT(DISTINCT s.id)::int AS tickets,
+        SUM(ni.net_quantity)::numeric AS "unitsSold"
+      FROM sales s
+      JOIN net_items ni ON ni.sale_id=s.id
+      WHERE s.branch_id=$1 AND s.status='COMPLETED' AND ni.net_quantity > 0
+        AND s.created_at >= date_trunc('month', now()) - ($2::int - 1) * interval '1 month'
+      GROUP BY 1
+    ), purchases_monthly AS (
+      SELECT date_trunc('month', po.received_at) AS month,
+        SUM(po.total)::numeric AS purchases,
+        SUM(po.paid_amount)::numeric AS "initialPayments"
+      FROM purchase_orders po
+      WHERE po.branch_id=$1 AND po.status='RECEIVED'
+        AND po.received_at >= date_trunc('month', now()) - ($2::int - 1) * interval '1 month'
+      GROUP BY 1
+    ), later_payments_monthly AS (
+      SELECT date_trunc('month', sp.created_at) AS month,
+        SUM(sp.amount)::numeric AS payments
+      FROM supplier_payments sp
+      JOIN suppliers su ON su.id=sp.supplier_id
+      WHERE su.branch_id=$1
+        AND sp.created_at >= date_trunc('month', now()) - ($2::int - 1) * interval '1 month'
+      GROUP BY 1
+    ), expenses_monthly AS (
+      SELECT date_trunc('month', ce.created_at) AS month,
+        SUM(ce.amount)::numeric AS expenses
+      FROM cash_expenses ce
+      JOIN cash_sessions cs ON cs.id=ce.cash_session_id
+      WHERE cs.branch_id=$1
+        AND ce.created_at >= date_trunc('month', now()) - ($2::int - 1) * interval '1 month'
+      GROUP BY 1
+    ), product_monthly AS (
+      SELECT date_trunc('month', s.created_at) AS month,
+        ni.product_name AS name,
+        SUM(ni.net_quantity)::numeric AS quantity
+      FROM sales s
+      JOIN net_items ni ON ni.sale_id=s.id
+      WHERE s.branch_id=$1 AND s.status='COMPLETED' AND ni.net_quantity > 0
+        AND s.created_at >= date_trunc('month', now()) - ($2::int - 1) * interval '1 month'
+      GROUP BY 1,2
+    ), ranked_products AS (
+      SELECT month, name, quantity,
+        ROW_NUMBER() OVER (PARTITION BY month ORDER BY quantity DESC, name) AS position
+      FROM product_monthly
+    )
+    SELECT to_char(ma.month, 'YYYY-MM') AS month,
+      COALESCE(sm.revenue, 0)::numeric AS revenue,
+      COALESCE(sm."costOfGoods", 0)::numeric AS "costOfGoods",
+      COALESCE(sm."grossProfit", 0)::numeric AS "grossProfit",
+      CASE WHEN COALESCE(sm.revenue, 0) > 0
+        THEN sm."grossProfit" / sm.revenue ELSE 0 END::numeric AS "grossMargin",
+      COALESCE(sm.tickets, 0)::int AS tickets,
+      COALESCE(sm."unitsSold", 0)::numeric AS "unitsSold",
+      COALESCE(pm.purchases, 0)::numeric AS purchases,
+      (COALESCE(pm."initialPayments", 0) + COALESCE(lpm.payments, 0))::numeric AS "supplierPayments",
+      COALESCE(em.expenses, 0)::numeric AS "operatingExpenses",
+      (COALESCE(sm."grossProfit", 0) - COALESCE(em.expenses, 0))::numeric AS "operatingResult",
+      rp.name AS "topProductName",
+      COALESCE(rp.quantity, 0)::numeric AS "topProductQuantity"
+    FROM month_axis ma
+    LEFT JOIN sales_monthly sm ON sm.month=ma.month
+    LEFT JOIN purchases_monthly pm ON pm.month=ma.month
+    LEFT JOIN later_payments_monthly lpm ON lpm.month=ma.month
+    LEFT JOIN expenses_monthly em ON em.month=ma.month
+    LEFT JOIN ranked_products rp ON rp.month=ma.month AND rp.position=1
+    ORDER BY ma.month`,
+    [user.branchId, months],
+  )
+
+  const analyticsCtes = `WITH period AS (
+      SELECT to_date($2 || '-01', 'YYYY-MM-DD') AS start_at
+    ), returned AS (
+      SELECT sri.sale_item_id, SUM(sri.quantity) AS quantity
+      FROM sale_return_items sri
+      JOIN sale_returns sr ON sr.id=sri.sale_return_id
+      JOIN sale_items rsi ON rsi.id=sri.sale_item_id
+      JOIN sales rs ON rs.id=rsi.sale_id
+      WHERE rs.branch_id=$1
+      GROUP BY sri.sale_item_id
+    ), net_items AS (
+      SELECT si.*,
+        GREATEST(si.quantity - COALESCE(r.quantity, 0), 0) AS net_quantity
+      FROM sale_items si
+      LEFT JOIN returned r ON r.sale_item_id=si.id
+    )`
+
+  const [bestSellers, bestMargins, categories, suppliers] = await Promise.all([
     dbQuery(
-      `${netItems}
+      `${analyticsCtes}
        SELECT ni.product_id AS id, ni.product_name AS name,
+        COALESCE(p.unit, 'unidad') AS unit,
         SUM(ni.net_quantity)::numeric AS quantity,
         SUM(ni.unit_price * ni.net_quantity)::numeric AS revenue
-       FROM net_items ni JOIN sales s ON s.id=ni.sale_id
+       FROM net_items ni
+       JOIN sales s ON s.id=ni.sale_id
+       CROSS JOIN period pe
+       LEFT JOIN products p ON p.id=ni.product_id
        WHERE s.branch_id=$1 AND s.status='COMPLETED' AND ni.net_quantity > 0
-       GROUP BY 1,2 ORDER BY quantity DESC LIMIT 10`,
-      [user.branchId],
+        AND s.created_at >= pe.start_at AND s.created_at < pe.start_at + interval '1 month'
+       GROUP BY 1,2,3 ORDER BY quantity DESC, revenue DESC LIMIT 10`,
+      [user.branchId, selectedMonth],
     ),
     dbQuery(
-      `${netItems}
+      `${analyticsCtes}
        SELECT ni.product_id AS id, ni.product_name AS name,
         SUM((ni.unit_price-ni.unit_cost)*ni.net_quantity)::numeric AS profit,
         CASE WHEN SUM(ni.unit_price*ni.net_quantity)>0
           THEN SUM((ni.unit_price-ni.unit_cost)*ni.net_quantity)/SUM(ni.unit_price*ni.net_quantity)
-          ELSE 0 END AS margin
-       FROM net_items ni JOIN sales s ON s.id=ni.sale_id
+          ELSE 0 END::numeric AS margin
+       FROM net_items ni
+       JOIN sales s ON s.id=ni.sale_id
+       CROSS JOIN period pe
        WHERE s.branch_id=$1 AND s.status='COMPLETED' AND ni.net_quantity > 0
-       GROUP BY 1,2 ORDER BY profit DESC LIMIT 10`,
-      [user.branchId],
+        AND s.created_at >= pe.start_at AND s.created_at < pe.start_at + interval '1 month'
+       GROUP BY 1,2 ORDER BY profit DESC, margin DESC LIMIT 10`,
+      [user.branchId, selectedMonth],
     ),
     dbQuery(
-      `${netItems}
+      `${analyticsCtes}
        SELECT COALESCE(c.name,'Sin categoría') AS category,
         SUM(ni.unit_price*ni.net_quantity)::numeric AS revenue
-       FROM net_items ni JOIN sales s ON s.id=ni.sale_id
-        LEFT JOIN products p ON p.id=ni.product_id LEFT JOIN categories c ON c.id=p.category_id
+       FROM net_items ni
+       JOIN sales s ON s.id=ni.sale_id
+       CROSS JOIN period pe
+       LEFT JOIN products p ON p.id=ni.product_id
+       LEFT JOIN categories c ON c.id=p.category_id
        WHERE s.branch_id=$1 AND s.status='COMPLETED' AND ni.net_quantity > 0
+        AND s.created_at >= pe.start_at AND s.created_at < pe.start_at + interval '1 month'
        GROUP BY 1 ORDER BY revenue DESC`,
-      [user.branchId],
+      [user.branchId, selectedMonth],
+    ),
+    dbQuery(
+      `WITH period AS (
+        SELECT to_date($2 || '-01', 'YYYY-MM-DD') AS start_at
+      ), purchases AS (
+        SELECT po.supplier_id, SUM(po.total)::numeric AS purchases,
+          SUM(po.paid_amount)::numeric AS "initialPayments"
+        FROM purchase_orders po CROSS JOIN period pe
+        WHERE po.branch_id=$1 AND po.status='RECEIVED'
+          AND po.received_at >= pe.start_at AND po.received_at < pe.start_at + interval '1 month'
+        GROUP BY po.supplier_id
+      ), later_payments AS (
+        SELECT sp.supplier_id, SUM(sp.amount)::numeric AS payments
+        FROM supplier_payments sp CROSS JOIN period pe
+        JOIN suppliers su ON su.id=sp.supplier_id
+        WHERE su.branch_id=$1
+          AND sp.created_at >= pe.start_at AND sp.created_at < pe.start_at + interval '1 month'
+        GROUP BY sp.supplier_id
+      )
+      SELECT su.id, su.name,
+        COALESCE(pu.purchases, 0)::numeric AS purchases,
+        (COALESCE(pu."initialPayments", 0) + COALESCE(lp.payments, 0))::numeric AS paid
+      FROM suppliers su
+      LEFT JOIN purchases pu ON pu.supplier_id=su.id
+      LEFT JOIN later_payments lp ON lp.supplier_id=su.id
+      WHERE su.branch_id=$1 AND (COALESCE(pu.purchases, 0) > 0 OR COALESCE(lp.payments, 0) > 0)
+      ORDER BY purchases DESC, paid DESC, su.name`,
+      [user.branchId, selectedMonth],
     ),
   ])
 
+  const selectedIndex = monthly.rows.findIndex((row) => row.month === selectedMonth)
+  const selectedSummary =
+    selectedIndex >= 0 ? monthly.rows[selectedIndex] : { month: selectedMonth }
+  const previousSummary = selectedIndex > 0 ? monthly.rows[selectedIndex - 1] : null
+
   return json(response, 200, {
     monthly: monthly.rows,
+    selected: {
+      month: selectedMonth,
+      summary: selectedSummary,
+      previous: previousSummary,
+      bestSellers: bestSellers.rows,
+      bestMargins: bestMargins.rows,
+      categories: categories.rows,
+      suppliers: suppliers.rows,
+    },
     bestSellers: bestSellers.rows,
     bestMargins: bestMargins.rows,
     categories: categories.rows,

@@ -58,6 +58,8 @@ export default function App() {
   const [syncing, setSyncing] = useState(false)
   const [pendingCount, setPendingCount] = useState(() => readPendingSales().length)
   const [statisticsData, setStatisticsData] = useState(null)
+  const [statisticsMonth, setStatisticsMonth] = useState('')
+  const [statisticsLoading, setStatisticsLoading] = useState(false)
   const [importErrors, setImportErrors] = useState([])
   const [menuOpen, setMenuOpen] = useState(false)
   const [message, setMessage] = useState(null)
@@ -188,17 +190,20 @@ export default function App() {
     }
     let active = true
     businessApi
-      .statistics()
+      .statistics(statisticsMonth)
       .then((result) => {
         if (active) setStatisticsData(result)
       })
       .catch((error) => {
         if (active) setMessage({ text: error.message, type: 'error' })
       })
+      .finally(() => {
+        if (active) setStatisticsLoading(false)
+      })
     return () => {
       active = false
     }
-  }, [section, session?.user.role])
+  }, [section, session?.user.role, statisticsMonth])
 
   const total = useMemo(
     () => cart.reduce((sum, item) => sum + item.price * Number(item.qty || 0), 0),
@@ -250,6 +255,7 @@ export default function App() {
       setCustomers([])
       setSuppliers([])
       setStatisticsData(null)
+      setStatisticsMonth('')
       setCart([])
     }
   }
@@ -850,6 +856,12 @@ export default function App() {
             sales={sales}
             demoMode={DEMO_MODE}
             loading={!DEMO_MODE && !statisticsData}
+            refreshing={statisticsLoading && Boolean(statisticsData)}
+            selectedMonth={statisticsMonth}
+            onMonthChange={(month) => {
+              setStatisticsLoading(true)
+              setStatisticsMonth(month)
+            }}
           />
         )}
         {section === 'Clientes' && (
