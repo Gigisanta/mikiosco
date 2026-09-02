@@ -298,7 +298,7 @@ export function SalesView({
               </button>
             ))}
           </div>
-          <div className="catalog-controls" aria-label="Vista del catálogo">
+          <div className="catalog-controls" role="group" aria-label="Vista del catálogo">
             <button
               className={catalogMode === 'grid' ? 'active' : ''}
               aria-label="Vista en grilla"
