@@ -37,7 +37,7 @@ export function Sidebar({
     <aside className={menuOpen ? 'sidebar open' : 'sidebar'}>
       <div className="brand">
         <span className="brand-mark">m</span>
-        <span>
+        <span className="brand-name">
           mikiosco<span className="dot">.</span>app
         </span>
       </div>
@@ -55,7 +55,7 @@ export function Sidebar({
             }}
           >
             <Icon size={19} aria-hidden="true" />
-            {label}
+            <span className="nav-label">{label}</span>
             {label === 'Stock' && lowStockCount > 0 && (
               <span className="nav-count">{lowStockCount}</span>
             )}

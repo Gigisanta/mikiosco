@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Edit3, Percent, Plus, Trash2 } from 'lucide-react'
 import { money } from '../lib/format'
+import { categoryTone, productInitials } from '../lib/productAppearance'
 import { unitLabel } from '../lib/inventory'
 
 const emptyProduct = {
@@ -271,8 +272,8 @@ export function ProductsView({ products, suppliers, canEdit, demoMode, onSave, o
                 }
               />
             ) : (
-              <div className="mini-emoji" style={{ background: product.color }}>
-                {product.emoji}
+              <div className={`mini-emoji ${categoryTone(product.category)}`}>
+                {productInitials(product.name)}
               </div>
             )}
             <strong>{product.name}</strong>

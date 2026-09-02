@@ -2,13 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { Toast } from './components/Toast'
 import { Topbar } from './components/Topbar'
-import {
-  createDemoSales,
-  DEMO_CUSTOMERS,
-  DEMO_PRODUCTS,
-  DEMO_SUPPLIERS,
-  PRODUCT_COLORS,
-} from './data/demoData'
+import { createDemoSales, DEMO_CUSTOMERS, DEMO_PRODUCTS, DEMO_SUPPLIERS } from './data/demoData'
 import { exportStockWorkbook, importStockWorkbook } from './excel'
 import { useVersionedStorage } from './hooks/useVersionedStorage'
 import { apiProductToUi, authApi, businessApi } from './lib/api'
@@ -63,6 +57,7 @@ export default function App() {
   const [syncing, setSyncing] = useState(false)
   const [pendingCount, setPendingCount] = useState(() => readPendingSales().length)
   const [statisticsData, setStatisticsData] = useState(null)
+  const [importErrors, setImportErrors] = useState([])
   const [menuOpen, setMenuOpen] = useState(false)
   const [message, setMessage] = useState(null)
   const fileInput = useRef(null)
@@ -364,8 +359,6 @@ export default function App() {
         min: payload.minStock,
         max: payload.maxStock,
         sold: 0,
-        color: PRODUCT_COLORS[products.length % PRODUCT_COLORS.length],
-        emoji: '📦',
       }
       setProducts((current) =>
         payload.id
@@ -658,6 +651,7 @@ export default function App() {
     if (!file) return
     try {
       const { items, errors } = await importStockWorkbook(file)
+      setImportErrors(errors)
       if (!DEMO_MODE) {
         const result = await businessApi.updateStock(
           items.map((item) => ({
@@ -696,8 +690,6 @@ export default function App() {
               ...item,
               id: Date.now() + index,
               sold: 0,
-              color: PRODUCT_COLORS[index % PRODUCT_COLORS.length],
-              emoji: '📦',
             })
             created += 1
           }
@@ -707,6 +699,7 @@ export default function App() {
       const omitted = errors.length ? ` Se omitieron ${errors.length} filas.` : ''
       notify(`Excel aplicado: ${updated} actualizados y ${created} nuevos.${omitted}`)
     } catch (error) {
+      setImportErrors([error.message || 'No se pudo leer el archivo seleccionado.'])
       notify(error.message || 'No se pudo importar el archivo.', 'error')
     } finally {
       event.target.value = ''
@@ -781,6 +774,7 @@ export default function App() {
             sales={sales}
             onNavigate={setSection}
             demoMode={DEMO_MODE}
+            cashSession={cashSession}
           />
         )}
         {section === 'Productos' && (
@@ -802,6 +796,7 @@ export default function App() {
             onImport={() => fileInput.current?.click()}
             onExport={() => exportStockWorkbook(products)}
             canEdit={session.user.role !== 'VIEWER'}
+            importErrors={importErrors}
           />
         )}
         {section === 'Estadísticas' && (

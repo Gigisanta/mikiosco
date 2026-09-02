@@ -5,5 +5,33 @@
   "display": "standalone",
   "background_color": "#f5f7f4",
   "theme_color": "#087b56",
-  "description": "Gestión simple para kioscos"
+  "description": "Punto de venta, stock, caja y gestión simple para kioscos.",
+  "categories": ["business", "finance", "productivity"],
+  "orientation": "any",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-desktop.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Punto de venta MiKiosco"
+    },
+    {
+      "src": "/screenshot-mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "MiKiosco en tablet y celular"
+    }
+  ]
 }
