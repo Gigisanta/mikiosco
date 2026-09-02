@@ -9,12 +9,16 @@ async function handler(request, response) {
   if (request.method === 'GET') {
     const result = await dbQuery(
       `SELECT cs.id,cs.opening_amount AS "openingAmount",cs.opened_at AS "openedAt",cs.status,
-        u.name AS "openedBy",COALESCE(SUM(p.amount) FILTER (WHERE p.method='CASH'),0) AS "cashSales"
+        u.name AS "openedBy",
+        COALESCE((SELECT SUM(p.amount) FROM payments p JOIN sales s ON s.id=p.sale_id
+          WHERE s.cash_session_id=cs.id AND s.status='COMPLETED' AND p.method='CASH'),0) AS "cashSales",
+        COALESCE((SELECT SUM(e.amount) FROM cash_expenses e
+          WHERE e.cash_session_id=cs.id),0) AS expenses,
+        COALESCE((SELECT SUM(sr.total) FROM sale_returns sr JOIN sales s ON s.id=sr.sale_id
+          WHERE s.cash_session_id=cs.id AND sr.refund_method='CASH'),0) AS "cashReturns"
        FROM cash_sessions cs JOIN users u ON u.id=cs.opened_by
-       LEFT JOIN sales s ON s.cash_session_id=cs.id AND s.status='COMPLETED'
-       LEFT JOIN payments p ON p.sale_id=s.id
        WHERE cs.branch_id=$1 AND cs.status='OPEN'
-       GROUP BY cs.id,u.name ORDER BY cs.opened_at DESC LIMIT 1`,
+       ORDER BY cs.opened_at DESC LIMIT 1`,
       [user.branchId],
     )
     return json(response, 200, { session: result.rows[0] || null })
@@ -45,7 +49,44 @@ async function handler(request, response) {
     })
     return json(response, 201, { session })
   }
-  return methodNotAllowed(response, ['GET', 'POST'])
+  if (request.method === 'PATCH') {
+    const closingAmount = Number(request.body?.closingAmount)
+    if (!Number.isFinite(closingAmount) || closingAmount < 0) {
+      return json(response, 422, { error: 'Ingresá el efectivo contado en caja.' })
+    }
+    const session = await dbTransaction(async (client) => {
+      const found = await client.query(
+        `SELECT cs.id,cs.opening_amount,
+          COALESCE((SELECT SUM(p.amount) FROM payments p JOIN sales s ON s.id=p.sale_id
+            WHERE s.cash_session_id=cs.id AND s.status='COMPLETED' AND p.method='CASH'),0) AS cash_sales,
+          COALESCE((SELECT SUM(e.amount) FROM cash_expenses e WHERE e.cash_session_id=cs.id),0) AS expenses,
+          COALESCE((SELECT SUM(sr.total) FROM sale_returns sr JOIN sales s ON s.id=sr.sale_id
+            WHERE s.cash_session_id=cs.id AND sr.refund_method='CASH'),0) AS cash_returns
+         FROM cash_sessions cs WHERE cs.id=$1 AND cs.branch_id=$2 AND cs.status='OPEN' FOR UPDATE`,
+        [request.body?.id, user.branchId],
+      )
+      if (!found.rowCount) {
+        throw Object.assign(new Error('La caja indicada no está abierta.'), { statusCode: 404 })
+      }
+      const expected =
+        Number(found.rows[0].opening_amount) +
+        Number(found.rows[0].cash_sales) -
+        Number(found.rows[0].expenses) -
+        Number(found.rows[0].cash_returns)
+      const difference = closingAmount - expected
+      const result = await client.query(
+        `UPDATE cash_sessions SET status='CLOSED',closed_by=$1,closed_at=now(),
+          expected_amount=$2,closing_amount=$3,difference=$4 WHERE id=$5
+         RETURNING id,status,opened_at AS "openedAt",closed_at AS "closedAt",
+          opening_amount AS "openingAmount",expected_amount AS "expectedAmount",
+          closing_amount AS "closingAmount",difference`,
+        [user.id, expected, closingAmount, difference, found.rows[0].id],
+      )
+      return result.rows[0]
+    })
+    return json(response, 200, { session })
+  }
+  return methodNotAllowed(response, ['GET', 'POST', 'PATCH'])
 }
 
 export default withErrorHandling(handler)

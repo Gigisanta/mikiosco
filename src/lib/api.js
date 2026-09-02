@@ -46,6 +46,13 @@ export const businessApi = {
   cashSession: () => apiRequest('/api/cash-sessions'),
   openCashSession: (openingAmount) =>
     apiRequest('/api/cash-sessions', { method: 'POST', body: { openingAmount } }),
+  closeCashSession: (id, closingAmount) =>
+    apiRequest('/api/cash-sessions', { method: 'PATCH', body: { id, closingAmount } }),
+  expenses: (cashSessionId) => apiRequest(`/api/expenses?cashSessionId=${cashSessionId}`),
+  createExpense: (expense) => apiRequest('/api/expenses', { method: 'POST', body: expense }),
+  voidSale: (id) => apiRequest(`/api/sales/${id}`, { method: 'DELETE' }),
+  returnItems: (id, items, refundMethod = 'CASH') =>
+    apiRequest(`/api/sales/${id}`, { method: 'PATCH', body: { items, refundMethod } }),
 }
 
 export function apiProductToUi(product) {
