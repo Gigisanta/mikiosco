@@ -29,9 +29,10 @@ Sin `DATABASE_URL` la aplicación inicia en modo demostración para permitir rec
 ## Módulos incluidos
 
 - Punto de venta con pagos mixtos, vuelto y ticket imprimible.
-- Inventario, productos y alertas de stock mínimo.
+- Inventario por unidad, kg, g, litros, ml, packs, cajas o metros, con mínimos y máximos.
+- Importación y exportación de stock en Excel mediante una plantilla validada.
 - Clientes, cuenta corriente y proveedores (modelo de datos + API).
 - Caja, gastos, arqueos y resumen diario.
-- Reportería de ventas, margen y productos destacados.
+- Estadísticas mensuales de ventas, ganancia, categorías, rotación y margen por producto.
 
 Consulta [la arquitectura](docs/ARQUITECTURA.md) antes de configurar producción.
