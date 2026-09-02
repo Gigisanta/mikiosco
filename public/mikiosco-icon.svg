@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="MiKiosco">
+  <rect width="512" height="512" rx="108" fill="#087b56"/>
+  <path d="M118 178c0-25 20-45 45-45h186c25 0 45 20 45 45v156c0 25-20 45-45 45H163c-25 0-45-20-45-45V178Z" fill="#f5faf7"/>
+  <path d="M155 207h53l49 76 48-76h52v116h-45v-54l-40 61h-31l-41-61v54h-45V207Z" fill="#087b56"/>
+  <circle cx="376" cy="116" r="24" fill="#ef754f"/>
+</svg>

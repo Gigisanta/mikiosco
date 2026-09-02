@@ -11,8 +11,6 @@ export const DEMO_PRODUCTS = [
     min: 8,
     max: 40,
     sold: 73,
-    color: '#f7d7d7',
-    emoji: '🥤',
   },
   {
     id: 2,
@@ -26,8 +24,6 @@ export const DEMO_PRODUCTS = [
     min: 6,
     max: 30,
     sold: 51,
-    color: '#d8edf9',
-    emoji: '💧',
   },
   {
     id: 3,
@@ -41,8 +37,6 @@ export const DEMO_PRODUCTS = [
     min: 8,
     max: 32,
     sold: 89,
-    color: '#f4e1c4',
-    emoji: '🍪',
   },
   {
     id: 4,
@@ -56,8 +50,6 @@ export const DEMO_PRODUCTS = [
     min: 6,
     max: 24,
     sold: 46,
-    color: '#f7e5a5',
-    emoji: '🥔',
   },
   {
     id: 5,
@@ -71,8 +63,6 @@ export const DEMO_PRODUCTS = [
     min: 12,
     max: 48,
     sold: 62,
-    color: '#f9e5ad',
-    emoji: '🍺',
   },
   {
     id: 6,
@@ -86,8 +76,6 @@ export const DEMO_PRODUCTS = [
     min: 10,
     max: 50,
     sold: 104,
-    color: '#dcebc5',
-    emoji: '🍬',
   },
   {
     id: 7,
@@ -101,8 +89,6 @@ export const DEMO_PRODUCTS = [
     min: 8,
     max: 24,
     sold: 37,
-    color: '#dfd9f2',
-    emoji: '⚡',
   },
   {
     id: 8,
@@ -116,8 +102,6 @@ export const DEMO_PRODUCTS = [
     min: 1,
     max: 8,
     sold: 12.4,
-    color: '#e6c8ad',
-    emoji: '🍬',
   },
 ]
 
@@ -127,8 +111,8 @@ export function createDemoSales() {
   for (let monthOffset = 11; monthOffset >= 0; monthOffset -= 1) {
     for (let ticket = 0; ticket < 6; ticket += 1) {
       const date = new Date()
-      date.setDate(3 + ticket * 4)
       date.setMonth(date.getMonth() - monthOffset)
+      date.setDate(monthOffset === 0 ? Math.max(1, new Date().getDate() - ticket) : 3 + ticket * 4)
       date.setHours(9 + ticket, 12, 0, 0)
       const chosen = [
         DEMO_PRODUCTS[(ticket + monthOffset) % DEMO_PRODUCTS.length],
@@ -164,8 +148,6 @@ export function createDemoSales() {
   }
   return sales
 }
-
-export const PRODUCT_COLORS = ['#d8edf9', '#f4e1c4', '#dcebc5', '#dfd9f2', '#f7d7d7']
 
 export const DEMO_CUSTOMERS = [
   {
