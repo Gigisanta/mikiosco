@@ -116,6 +116,10 @@ export default function App() {
     authApi
       .me()
       .then((result) => {
+        if (!result.user) {
+          setSession(null)
+          return
+        }
         setSession({
           user: result.user,
           branch: { id: result.user.branchId, name: result.user.branchName },

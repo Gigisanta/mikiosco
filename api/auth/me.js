@@ -69,6 +69,9 @@ async function me(request, response) {
     return json(response, 200, { ok: true })
   }
   if (request.method !== 'GET') return methodNotAllowed(response, ['GET'])
+  const hasSession =
+    request.headers.authorization || request.headers.cookie?.includes('mikiosco_session=')
+  if (!hasSession) return json(response, 200, { user: null })
   const session = await requireRole(request, response, ['ADMIN', 'CASHIER', 'VIEWER'])
   if (!session) return
   const result = await dbQuery(
