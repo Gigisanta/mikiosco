@@ -13,24 +13,10 @@ const headerAliases = {
 const normalizedHeader = value => String(value ?? '').trim().toLowerCase()
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
-const plainCellValue = value => {
-  if (value == null) return ''
-  if (typeof value !== 'object') return value
-  if ('result' in value) return value.result
-  if (Array.isArray(value.richText)) return value.richText.map(part => part.text).join('')
-  if ('text' in value) return value.text
-  return String(value)
-}
-
 function valueFor(row, field) {
   const aliases = headerAliases[field].map(normalizedHeader)
   const key = Object.keys(row).find(candidate => aliases.includes(normalizedHeader(candidate)))
   return key ? row[key] : undefined
-}
-
-async function loadExcelEngine() {
-  const module = await import('exceljs')
-  return module.default || module
 }
 
 export function normalizeUnit(value) {
@@ -54,24 +40,16 @@ const numberValue = (value, fallback = 0) => {
 }
 
 export async function importStockWorkbook(file) {
-  const ExcelJS = await loadExcelEngine()
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(await file.arrayBuffer())
-  const sheet = workbook.getWorksheet('Stock') || workbook.worksheets[0]
-  if (!sheet) throw new Error('El archivo no contiene hojas para importar.')
+  const { default: readWorkbook } = await import('read-excel-file/browser')
+  const sheets = await readWorkbook(file)
+  const data = (sheets.find(sheet => normalizedHeader(sheet.sheet) === 'stock') || sheets[0])?.data
+  if (!data?.length) throw new Error('El archivo no contiene hojas para importar.')
 
-  const headers = []
-  sheet.getRow(1).eachCell((cell, column) => { headers[column] = String(plainCellValue(cell.value)).trim() })
-  const rows = []
-  for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
-    const source = sheet.getRow(rowNumber)
-    const row = {}
-    headers.forEach((header, column) => { if (header) row[header] = plainCellValue(source.getCell(column).value) })
-    rows.push(row)
-  }
-
+  const headers = data[0].map(value => String(value ?? '').trim())
+  const rows = data.slice(1).map(values => Object.fromEntries(headers.map((header, index) => [header, values[index]])))
   const items = []
   const errors = []
+
   rows.forEach((row, index) => {
     const name = String(valueFor(row, 'nombre') ?? '').trim()
     if (!name) {
@@ -97,55 +75,30 @@ export async function importStockWorkbook(file) {
   return { items, errors }
 }
 
+const headerCell = value => ({ value, fontWeight: 'bold', backgroundColor: '#087B56', textColor: '#FFFFFF', align: 'center', height: 26 })
+const numberCell = value => ({ value, type: Number, format: '#,##0.000' })
+const moneyCell = value => ({ value, type: Number, format: '$ #,##0.00' })
+
 export async function exportStockWorkbook(products) {
-  const ExcelJS = await loadExcelEngine()
-  const workbook = new ExcelJS.Workbook()
-  workbook.creator = 'MiKiosco'
-  const sheet = workbook.addWorksheet('Stock', { views: [{ state: 'frozen', ySplit: 1 }] })
-  sheet.columns = [
-    ['Código', 'barcode', 18], ['Producto', 'name', 30], ['Categoría', 'category', 17], ['Unidad', 'unit', 14],
-    ['Stock actual', 'stock', 14], ['Stock mínimo', 'min', 14], ['Stock máximo', 'max', 14], ['Costo', 'cost', 14],
-    ['Precio venta', 'price', 15], ['Margen $', 'marginAmount', 14], ['Margen %', 'marginPercent', 13], ['Estado', 'status', 15],
-  ].map(([header, key, width]) => ({ header, key, width }))
+  const { default: writeExcelFile } = await import('write-excel-file/browser')
+  const headings = ['Código', 'Producto', 'Categoría', 'Unidad', 'Stock actual', 'Stock mínimo', 'Stock máximo', 'Costo', 'Precio venta', 'Margen $', 'Margen %', 'Estado']
+  const stockData = [headings.map(headerCell), ...products.map(product => [
+    String(product.barcode || ''), product.name, product.category, product.unit,
+    numberCell(product.stock), numberCell(product.min), numberCell(product.max), moneyCell(product.cost), moneyCell(product.price),
+    moneyCell(product.price - product.cost),
+    { value: product.price ? (product.price - product.cost) / product.price : 0, type: Number, format: '0.0%' },
+    product.stock <= product.min ? 'REPOSICIÓN' : product.max > 0 && product.stock >= product.max ? 'TOPE' : 'OK',
+  ])]
+  const guideData = [
+    [{ value: 'MiKiosco — Exportación de stock', fontWeight: 'bold', fontSize: 16, textColor: '#087B56' }],
+    ['Podés modificar Stock actual, Stock mínimo, Stock máximo, Costo y Precio venta.'],
+    ['No cambies los encabezados. Al importar, los productos se identifican por Código y luego por nombre.'],
+    ['Unidades válidas: unidad, kg, g, litro, ml, pack, caja y metro.'],
+  ]
+  const columns = [18, 30, 17, 14, 14, 14, 14, 14, 15, 14, 13, 15].map(width => ({ width }))
 
-  products.forEach(product => sheet.addRow({
-    barcode: product.barcode || '', name: product.name, category: product.category, unit: product.unit,
-    stock: product.stock, min: product.min, max: product.max, cost: product.cost, price: product.price,
-    marginAmount: product.price - product.cost,
-    marginPercent: product.price ? (product.price - product.cost) / product.price : 0,
-    status: product.stock <= product.min ? 'REPOSICIÓN' : product.max > 0 && product.stock >= product.max ? 'TOPE' : 'OK',
-  }))
-
-  const header = sheet.getRow(1)
-  header.height = 25
-  header.font = { bold: true, color: { argb: 'FFFFFFFF' } }
-  header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF087B56' } }
-  header.alignment = { vertical: 'middle' }
-  sheet.autoFilter = { from: 'A1', to: `L${products.length + 1}` }
-  for (let index = 2; index <= products.length + 1; index += 1) {
-    sheet.getCell(`A${index}`).numFmt = '@'
-    ;['E', 'F', 'G'].forEach(column => { sheet.getCell(`${column}${index}`).numFmt = '0.000' })
-    ;['H', 'I', 'J'].forEach(column => { sheet.getCell(`${column}${index}`).numFmt = '$ #,##0.00' })
-    sheet.getCell(`K${index}`).numFmt = '0.0%'
-  }
-
-  const guide = workbook.addWorksheet('Instrucciones')
-  guide.getColumn(1).width = 100
-  ;[
-    'MiKiosco — Exportación de stock',
-    'Podés modificar Stock actual, Stock mínimo, Stock máximo, Costo y Precio venta.',
-    'No cambies los encabezados. Al importar, los productos se identifican por Código y luego por nombre.',
-    'Unidades válidas: unidad, kg, g, litro, ml, pack, caja y metro.',
-  ].forEach((text, index) => { guide.getCell(index + 1, 1).value = text })
-  guide.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FF087B56' } }
-
-  const buffer = await workbook.xlsx.writeBuffer()
-  const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `stock-mikiosco-${new Date().toISOString().slice(0, 10)}.xlsx`
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  await writeExcelFile([
+    { data: stockData, sheet: 'Stock', columns, stickyRowsCount: 1 },
+    { data: guideData, sheet: 'Instrucciones', columns: [{ width: 100 }] },
+  ]).toFile(`stock-mikiosco-${new Date().toISOString().slice(0, 10)}.xlsx`)
 }
