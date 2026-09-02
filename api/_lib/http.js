@@ -39,8 +39,9 @@ export function withErrorHandling(handler) {
     try {
       return await handler(request, response)
     } catch (error) {
-      console.error('Error de API', { message: error.message, route: request.url })
       const status = error.statusCode || 500
+      const log = status >= 500 ? console.error : console.warn
+      log('Respuesta de API', { status, message: error.message, route: request.url })
       const message =
         status >= 500 ? 'Ocurrió un error interno. Intentá nuevamente.' : error.message
       return json(response, status, { error: message })
