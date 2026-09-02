@@ -10,8 +10,12 @@ if (process.env.ADMIN_PASSWORD.length < 10) {
   throw new Error('ADMIN_PASSWORD debe tener al menos 10 caracteres.')
 }
 
+const databaseUrl = new URL(process.env.DATABASE_URL)
+if (['prefer', 'require', 'verify-ca'].includes(databaseUrl.searchParams.get('sslmode'))) {
+  databaseUrl.searchParams.set('sslmode', 'verify-full')
+}
 const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: databaseUrl.toString(),
   ssl: { rejectUnauthorized: true },
 })
 const client = await pool.connect()

@@ -1,7 +1,18 @@
 import pg from 'pg'
-const pool = process.env.DATABASE_URL
+
+function normalizedConnectionString(value) {
+  if (!value) return null
+  const url = new URL(value)
+  if (['prefer', 'require', 'verify-ca'].includes(url.searchParams.get('sslmode'))) {
+    url.searchParams.set('sslmode', 'verify-full')
+  }
+  return url.toString()
+}
+
+const connectionString = normalizedConnectionString(process.env.DATABASE_URL)
+const pool = connectionString
   ? new pg.Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : undefined,
     })
   : null
