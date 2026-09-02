@@ -15,6 +15,7 @@ export function SalesView({
   changeQuantity,
   clearCart,
   finishSale,
+  canSell,
 }) {
   const categories = [...new Set(products.map((product) => product.category))].sort()
   const visibleProducts = products.filter((product) =>
@@ -54,7 +55,7 @@ export function SalesView({
                 className="product-card"
                 key={product.id}
                 onClick={() => addProduct(product)}
-                disabled={product.stock <= 0}
+                disabled={product.stock <= 0 || !canSell}
               >
                 <div className="product-visual" style={{ background: product.color }}>
                   {product.emoji}
@@ -141,13 +142,18 @@ export function SalesView({
                 key={type}
                 onClick={() => setPayment(type)}
                 className={payment === type ? 'payment chosen' : 'payment'}
+                disabled={!canSell}
               >
                 <WalletCards size={17} aria-hidden="true" />
                 {type}
               </button>
             ))}
           </div>
-          <button className="charge-button" disabled={!cart.length} onClick={finishSale}>
+          <button
+            className="charge-button"
+            disabled={!cart.length || !canSell}
+            onClick={finishSale}
+          >
             {saleDone ? (
               <>
                 <Check size={20} /> Venta registrada

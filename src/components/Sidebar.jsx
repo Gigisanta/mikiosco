@@ -2,6 +2,7 @@ import {
   BarChart3,
   Box,
   LayoutDashboard,
+  LogOut,
   PackageCheck,
   ShoppingBag,
   WalletCards,
@@ -16,7 +17,18 @@ const items = [
   [WalletCards, 'Caja'],
 ]
 
-export function Sidebar({ section, setSection, menuOpen, setMenuOpen, lowStockCount }) {
+export function Sidebar({
+  section,
+  setSection,
+  menuOpen,
+  setMenuOpen,
+  lowStockCount,
+  role = 'ADMIN',
+  user,
+  branch,
+  onLogout,
+}) {
+  const visibleItems = items.filter(([, label]) => role !== 'CASHIER' || label !== 'Estadísticas')
   return (
     <aside className={menuOpen ? 'sidebar open' : 'sidebar'}>
       <div className="brand">
@@ -26,10 +38,10 @@ export function Sidebar({ section, setSection, menuOpen, setMenuOpen, lowStockCo
         </span>
       </div>
       <div className="store-select">
-        <span>Mi Kiosco</span>
+        <span>{branch?.name || 'Mi Kiosco'}</span>
       </div>
       <nav aria-label="Navegación principal">
-        {items.map(([Icon, label]) => (
+        {visibleItems.map(([Icon, label]) => (
           <button
             key={label}
             className={section === label ? 'nav-item active' : 'nav-item'}
@@ -51,12 +63,20 @@ export function Sidebar({ section, setSection, menuOpen, setMenuOpen, lowStockCo
           ?
         </span>
         <div>
-          <strong>Tomás</strong>
-          <span>Administrador</span>
+          <strong>{user?.name || 'Usuario'}</strong>
+          <span>
+            {{ ADMIN: 'Administrador', CASHIER: 'Cajero', VIEWER: 'Solo consulta' }[role]}
+          </span>
         </div>
-        <div className="avatar" aria-hidden="true">
-          T
-        </div>
+        {onLogout ? (
+          <button className="logout-button" aria-label="Cerrar sesión" onClick={onLogout}>
+            <LogOut size={16} />
+          </button>
+        ) : (
+          <div className="avatar" aria-hidden="true">
+            {(user?.name || 'U').slice(0, 1).toUpperCase()}
+          </div>
+        )}
       </div>
     </aside>
   )

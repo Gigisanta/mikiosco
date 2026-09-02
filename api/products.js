@@ -1,18 +1,34 @@
 import { requireRole, json, methodNotAllowed } from './_lib/auth.js'
 import { dbQuery } from './_lib/database.js'
+import { withErrorHandling } from './_lib/http.js'
 
-export default async function handler(request, response) {
+async function handler(request, response) {
   const user = await requireRole(request, response, ['ADMIN', 'CASHIER', 'VIEWER'])
   if (!user) return
   if (request.method === 'GET') {
     const search = `%${String(request.query.q || '').trim()}%`
     const result = await dbQuery(
-      'SELECT id, name, barcode, unit, sale_price AS "salePrice", cost_price AS "costPrice", stock, min_stock AS "minStock", max_stock AS "maxStock", category_id AS "categoryId" FROM products WHERE branch_id = $1 AND active = true AND (name ILIKE $2 OR COALESCE(barcode, \'\') ILIKE $2) ORDER BY name LIMIT 100',
+      `SELECT p.id, p.name, p.barcode, p.unit, p.sale_price AS "salePrice",
+        p.cost_price AS "costPrice", p.stock, p.min_stock AS "minStock",
+        p.max_stock AS "maxStock", p.category_id AS "categoryId",
+        COALESCE(c.name, 'Sin categoría') AS "categoryName",
+        COALESCE(SUM(CASE WHEN s.status = 'COMPLETED' THEN si.quantity ELSE 0 END), 0) AS sold
+      FROM products p
+      LEFT JOIN categories c ON c.id = p.category_id
+      LEFT JOIN sale_items si ON si.product_id = p.id
+      LEFT JOIN sales s ON s.id = si.sale_id
+      WHERE p.branch_id = $1 AND p.active = true
+        AND (p.name ILIKE $2 OR COALESCE(p.barcode, '') ILIKE $2)
+      GROUP BY p.id, c.name
+      ORDER BY p.name LIMIT 100`,
       [user.branchId, search],
     )
     return json(response, 200, { items: result.rows })
   }
   if (request.method === 'POST') {
+    if (user.role !== 'ADMIN') {
+      return json(response, 403, { error: 'Solo un administrador puede crear productos.' })
+    }
     const {
       name,
       barcode,
@@ -50,3 +66,5 @@ export default async function handler(request, response) {
   }
   return methodNotAllowed(response, ['GET', 'POST'])
 }
+
+export default withErrorHandling(handler)

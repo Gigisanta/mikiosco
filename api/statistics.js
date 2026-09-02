@@ -1,7 +1,8 @@
 import { requireRole, json, methodNotAllowed } from './_lib/auth.js'
 import { dbQuery } from './_lib/database.js'
+import { withErrorHandling } from './_lib/http.js'
 
-export default async function handler(request, response) {
+async function handler(request, response) {
   const user = await requireRole(request, response, ['ADMIN', 'VIEWER'])
   if (!user) return
   if (request.method !== 'GET') return methodNotAllowed(response, ['GET'])
@@ -46,3 +47,5 @@ export default async function handler(request, response) {
     categories: categories.rows,
   })
 }
+
+export default withErrorHandling(handler)

@@ -22,9 +22,14 @@ npm run dev
 ```bash
 DATABASE_URL=postgresql://...
 AUTH_SECRET=una-clave-aleatoria-larga
+VITE_DEMO_MODE=false
 ```
 
-Sin `DATABASE_URL` la aplicación inicia en modo demostración para permitir recorridos comerciales y desarrollo de interfaz.
+El frontend inicia en modo demostración por defecto para permitir recorridos comerciales. Definí
+`VITE_DEMO_MODE=false` junto con la base y el secreto para usar datos reales.
+
+Aplicá, en orden, los archivos de `db/migrations/` sobre una base existente. Para una instalación
+nueva también podés ejecutar `db/schema.sql`.
 
 ## Módulos incluidos
 
