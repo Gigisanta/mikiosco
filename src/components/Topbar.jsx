@@ -1,6 +1,6 @@
 import { CalendarDays, Menu } from 'lucide-react'
 
-export function Topbar({ section, dateLabel, onMenu }) {
+export function Topbar({ section, dateLabel, onMenu, connection }) {
   return (
     <header className="topbar">
       <button className="mobile-menu" aria-label="Abrir menú" onClick={onMenu}>
@@ -13,6 +13,7 @@ export function Topbar({ section, dateLabel, onMenu }) {
         <h1>{section === 'Ventas' ? 'Nueva venta' : section}</h1>
       </div>
       <div className="today">
+        <span className={`connection-state ${connection.type}`}>{connection.label}</span>
         <CalendarDays size={17} aria-hidden="true" /> {dateLabel}
       </div>
     </header>

@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { Toast } from './components/Toast'
 import { Topbar } from './components/Topbar'
 import { DEMO_PRODUCTS, PRODUCT_COLORS } from './data/demoData'
 import { exportStockWorkbook, importStockWorkbook } from './excel'
 import { useVersionedStorage } from './hooks/useVersionedStorage'
+import { apiProductToUi, authApi, businessApi } from './lib/api'
 import { formatDateLabel, money } from './lib/format'
 import { roundQuantity, unitStep } from './lib/inventory'
+import { enqueueSale, readPendingSales, syncPendingSales } from './lib/offlineQueue'
 import { CashView } from './views/CashView'
 import { DashboardView } from './views/DashboardView'
+import { LoginView } from './views/LoginView'
 import { ProductsView } from './views/ProductsView'
 import { SalesView } from './views/SalesView'
 import { StatisticsView } from './views/StatisticsView'
@@ -18,17 +21,58 @@ function createId() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE !== 'false'
+const demoSession = {
+  user: { id: 'demo', name: 'Tomás', role: 'ADMIN' },
+  branch: { id: 'demo', name: 'Mi Kiosco' },
+}
+
 export default function App() {
   const [section, setSection] = useState('Ventas')
   const [query, setQuery] = useState('')
   const [cart, setCart] = useState([])
   const [payment, setPayment] = useState('Efectivo')
   const [saleDone, setSaleDone] = useState(false)
-  const [products, setProducts] = useVersionedStorage('mikiosco-products', DEMO_PRODUCTS)
+  const [products, setProducts] = useVersionedStorage(
+    'mikiosco-products',
+    DEMO_MODE ? DEMO_PRODUCTS : [],
+  )
   const [sales, setSales] = useVersionedStorage('mikiosco-sales', [])
+  const [session, setSession] = useState(DEMO_MODE ? demoSession : null)
+  const [authReady, setAuthReady] = useState(DEMO_MODE)
+  const [cashSession, setCashSession] = useState(null)
+  const [online, setOnline] = useState(navigator.onLine)
+  const [syncing, setSyncing] = useState(false)
+  const [pendingCount, setPendingCount] = useState(() => readPendingSales().length)
   const [menuOpen, setMenuOpen] = useState(false)
   const [message, setMessage] = useState(null)
   const fileInput = useRef(null)
+
+  const loadServerData = useCallback(async () => {
+    try {
+      const [productsResult, salesResult, cashResult] = await Promise.all([
+        businessApi.products(),
+        businessApi.sales(),
+        businessApi.cashSession(),
+      ])
+      setProducts(productsResult.items.map(apiProductToUi))
+      setSales(
+        salesResult.items.map((sale) => ({
+          ...sale,
+          date: sale.createdAt,
+          cost: sale.items.reduce(
+            (sum, item) => sum + Number(item.unitCost) * Number(item.quantity),
+            0,
+          ),
+          payment: 'Servidor',
+        })),
+      )
+      setCashSession(cashResult.session)
+    } catch (error) {
+      if (error.status === 401) setSession(null)
+      else setMessage({ text: error.message, type: 'error' })
+    }
+  }, [setProducts, setSales])
 
   useEffect(() => {
     if (!message) return undefined
@@ -36,11 +80,74 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [message])
 
+  useEffect(() => {
+    if (DEMO_MODE) return undefined
+    authApi
+      .me()
+      .then((result) => {
+        setSession({
+          user: result.user,
+          branch: { id: result.user.branchId, name: result.user.branchName },
+        })
+      })
+      .catch(() => setSession(null))
+      .finally(() => setAuthReady(true))
+    return undefined
+  }, [])
+
+  useEffect(() => {
+    const handleOnline = () => setOnline(true)
+    const handleOffline = () => setOnline(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (DEMO_MODE || !session) return undefined
+    const controller = new AbortController()
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) void loadServerData()
+    })
+    return () => controller.abort()
+  }, [loadServerData, session])
+
+  useEffect(() => {
+    if (DEMO_MODE || !session || !online || !pendingCount) return undefined
+    async function synchronize() {
+      setSyncing(true)
+      const result = await syncPendingSales(businessApi.createSale)
+      setPendingCount(result.pending)
+      setSyncing(false)
+      if (!result.error) await loadServerData()
+    }
+    void synchronize()
+    return undefined
+  }, [loadServerData, online, pendingCount, session])
+
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.qty, 0), [cart])
   const lowStock = products.filter((product) => product.stock <= product.min)
 
   function notify(text, type = 'success') {
     setMessage({ text, type })
+  }
+
+  function handleLogin(result) {
+    setSession({ user: result.user, branch: result.branch })
+  }
+
+  async function handleLogout() {
+    try {
+      await authApi.logout()
+    } finally {
+      setSession(null)
+      setProducts([])
+      setSales([])
+      setCart([])
+    }
   }
 
   function addProduct(product) {
@@ -79,10 +186,10 @@ export default function App() {
     if (window.confirm('¿Querés limpiar todos los productos de la venta?')) setCart([])
   }
 
-  function finishSale() {
+  async function finishSale() {
     if (!cart.length) return
     const cost = cart.reduce((sum, item) => sum + item.cost * item.qty, 0)
-    const sale = {
+    const localSale = {
       id: createId(),
       date: new Date().toISOString(),
       total,
@@ -97,6 +204,44 @@ export default function App() {
         margin: (item.price - item.cost) * item.qty,
       })),
     }
+    if (!DEMO_MODE) {
+      if (!cashSession) {
+        notify('Abrí una caja antes de cobrar.', 'error')
+        return
+      }
+      const payload = {
+        idempotencyKey: createId(),
+        cashSessionId: cashSession.id,
+        items: cart.map((item) => ({
+          productId: item.id,
+          name: item.name,
+          quantity: item.qty,
+          unitPrice: item.price,
+        })),
+        payments: [
+          {
+            method: { Efectivo: 'CASH', Tarjeta: 'CARD', Transferencia: 'TRANSFER' }[payment],
+            amount: total,
+          },
+        ],
+      }
+      if (!online) {
+        const queue = enqueueSale(payload)
+        setPendingCount(queue.length)
+      } else {
+        try {
+          await businessApi.createSale(payload)
+        } catch (error) {
+          if (error.status) {
+            notify(error.message, 'error')
+            return
+          }
+          const queue = enqueueSale(payload)
+          setPendingCount(queue.length)
+          setOnline(false)
+        }
+      }
+    }
     setProducts((current) =>
       current.map((product) => {
         const item = cart.find((entry) => entry.id === product.id)
@@ -109,10 +254,11 @@ export default function App() {
           : product
       }),
     )
-    setSales((current) => [...current, sale])
+    setSales((current) => [...current, localSale])
     setCart([])
     setSaleDone(true)
     notify(`Venta registrada por ${money.format(total)}.`)
+    if (!DEMO_MODE && online) void loadServerData()
   }
 
   function updateProduct(id, patch) {
@@ -161,6 +307,23 @@ export default function App() {
     }
   }
 
+  if (!authReady) {
+    return (
+      <main className="login-page">
+        <div className="loading-card">Preparando tu kiosco…</div>
+      </main>
+    )
+  }
+  if (!session) return <LoginView onLogin={handleLogin} />
+
+  const connection = DEMO_MODE
+    ? { type: 'demo', label: 'Modo demostración' }
+    : syncing
+      ? { type: 'syncing', label: 'Sincronizando…' }
+      : online
+        ? { type: 'online', label: 'En línea' }
+        : { type: 'offline', label: `Sin conexión · ${pendingCount} en cola` }
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
@@ -172,12 +335,17 @@ export default function App() {
         menuOpen={menuOpen}
         setMenuOpen={setMenuOpen}
         lowStockCount={lowStock.length}
+        role={session.user.role}
+        user={session.user}
+        branch={session.branch}
+        onLogout={DEMO_MODE ? null : handleLogout}
       />
       <main id="main-content">
         <Topbar
           section={section}
           dateLabel={formatDateLabel()}
           onMenu={() => setMenuOpen((current) => !current)}
+          connection={connection}
         />
         <Toast message={message} />
         {section === 'Ventas' && (
@@ -194,6 +362,7 @@ export default function App() {
             changeQuantity={changeQuantity}
             clearCart={clearCart}
             finishSale={finishSale}
+            canSell={session.user.role !== 'VIEWER'}
           />
         )}
         {section === 'Resumen' && (

@@ -1,10 +1,11 @@
 import { requireRole, json, methodNotAllowed } from './_lib/auth.js'
 import { dbQuery, dbTransaction } from './_lib/database.js'
+import { withErrorHandling } from './_lib/http.js'
 
 const units = new Set(['unidad', 'kg', 'g', 'litro', 'ml', 'pack', 'caja', 'metro'])
 const validNumber = (value) => Number.isFinite(Number(value)) && Number(value) >= 0
 
-export default async function handler(request, response) {
+async function handler(request, response) {
   const user = await requireRole(request, response, ['ADMIN', 'CASHIER', 'VIEWER'])
   if (!user) return
 
@@ -104,3 +105,5 @@ export default async function handler(request, response) {
     return json(response, 422, { error: error.message || 'No se pudo actualizar el stock.' })
   }
 }
+
+export default withErrorHandling(handler)
