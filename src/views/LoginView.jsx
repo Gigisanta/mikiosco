@@ -55,22 +55,22 @@ export function LoginView({ onLogin }) {
             <p>Vendé, controlá el stock y entendé tu negocio desde un solo lugar.</p>
           </div>
 
-          <div className="login-benefits" aria-label="Beneficios de MiKiosco">
-            <div>
+          <div className="login-benefits" role="list" aria-label="Beneficios de MiKiosco">
+            <div role="listitem">
               <ShoppingBasket size={20} />
               <span>
                 <strong>Ventas rápidas</strong>
                 Un punto de venta listo para el ritmo del mostrador.
               </span>
             </div>
-            <div>
+            <div role="listitem">
               <PackageCheck size={20} />
               <span>
                 <strong>Stock siempre visible</strong>
                 Mínimos, máximos y reposición sin perder tiempo.
               </span>
             </div>
-            <div>
+            <div role="listitem">
               <BarChart3 size={20} />
               <span>
                 <strong>Números que se entienden</strong>
