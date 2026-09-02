@@ -2,6 +2,127 @@ import { requireRole } from '../_lib/auth.js'
 import { dbQuery, dbTransaction } from '../_lib/database.js'
 import { json, methodNotAllowed, withErrorHandling } from '../_lib/http.js'
 
+async function getCustomer(user, id, response) {
+  const customer = await dbQuery(
+    `SELECT id,name,phone,document,credit_limit AS "creditLimit",balance
+     FROM customers WHERE id=$1 AND branch_id=$2`,
+    [id, user.branchId],
+  )
+  if (!customer.rowCount) return json(response, 404, { error: 'Cliente no encontrado.' })
+  const movements = await dbQuery(
+    `SELECT s.id,'SALE' AS type,s.created_at AS "createdAt",p.amount,s.ticket_number AS "ticketNumber"
+     FROM sales s JOIN payments p ON p.sale_id=s.id AND p.method='ACCOUNT'
+     WHERE s.customer_id=$1 AND s.status='COMPLETED'
+     UNION ALL
+     SELECT cap.id,'PAYMENT' AS type,cap.created_at AS "createdAt",cap.amount,NULL AS "ticketNumber"
+     FROM customer_account_payments cap WHERE cap.customer_id=$1
+     ORDER BY "createdAt" DESC LIMIT 200`,
+    [id],
+  )
+  return json(response, 200, { customer: customer.rows[0], movements: movements.rows })
+}
+
+async function createCustomerPayment(user, id, request, response) {
+  if (!['ADMIN', 'CASHIER'].includes(user.role)) {
+    return json(response, 403, { error: 'No tenés permiso para registrar cobros.' })
+  }
+  if (request.method !== 'POST') return methodNotAllowed(response, ['POST'])
+  const amount = Number(request.body?.amount)
+  const method = request.body?.method || 'CASH'
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return json(response, 422, { error: 'Ingresá un importe mayor a cero.' })
+  }
+  if (!['CASH', 'CARD', 'TRANSFER'].includes(method)) {
+    return json(response, 422, { error: 'Elegí un medio de cobro válido.' })
+  }
+  const payment = await dbTransaction(async (client) => {
+    if (request.body?.cashSessionId) {
+      const session = await client.query(
+        "SELECT id FROM cash_sessions WHERE id=$1 AND branch_id=$2 AND status='OPEN'",
+        [request.body.cashSessionId, user.branchId],
+      )
+      if (!session.rowCount) {
+        throw Object.assign(new Error('La caja indicada no está abierta.'), { statusCode: 422 })
+      }
+    }
+    const customer = await client.query(
+      'SELECT id,balance FROM customers WHERE id=$1 AND branch_id=$2 FOR UPDATE',
+      [id, user.branchId],
+    )
+    if (!customer.rowCount) {
+      throw Object.assign(new Error('Cliente no encontrado.'), { statusCode: 404 })
+    }
+    if (amount > Number(customer.rows[0].balance)) {
+      throw Object.assign(new Error('El cobro supera el saldo pendiente.'), { statusCode: 422 })
+    }
+    const result = await client.query(
+      `INSERT INTO customer_account_payments (customer_id,user_id,cash_session_id,method,amount,note)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,amount,method,created_at AS "createdAt"`,
+      [id, user.id, request.body.cashSessionId || null, method, amount, request.body.note || null],
+    )
+    await client.query('UPDATE customers SET balance=balance-$1 WHERE id=$2', [amount, id])
+    return result.rows[0]
+  })
+  return json(response, 201, { payment })
+}
+
+async function createSupplierPayment(user, id, request, response) {
+  if (user.role !== 'ADMIN') {
+    return json(response, 403, { error: 'Solo un administrador puede pagar proveedores.' })
+  }
+  if (request.method !== 'POST') return methodNotAllowed(response, ['POST'])
+  const amount = Number(request.body?.amount)
+  const method = request.body?.method || 'CASH'
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return json(response, 422, { error: 'Ingresá un importe mayor a cero.' })
+  }
+  if (!['CASH', 'CARD', 'TRANSFER'].includes(method)) {
+    return json(response, 422, { error: 'Elegí un medio de pago válido.' })
+  }
+  const payment = await dbTransaction(async (client) => {
+    if (method === 'CASH') {
+      const session = await client.query(
+        "SELECT id FROM cash_sessions WHERE id=$1 AND branch_id=$2 AND status='OPEN'",
+        [request.body?.cashSessionId, user.branchId],
+      )
+      if (!session.rowCount) {
+        throw Object.assign(new Error('Abrí una caja antes de pagar en efectivo.'), {
+          statusCode: 422,
+        })
+      }
+    }
+    const supplier = await client.query(
+      'SELECT id,current_debt FROM suppliers WHERE id=$1 AND branch_id=$2 FOR UPDATE',
+      [id, user.branchId],
+    )
+    if (!supplier.rowCount) {
+      throw Object.assign(new Error('Proveedor no encontrado.'), { statusCode: 404 })
+    }
+    if (amount > Number(supplier.rows[0].current_debt)) {
+      throw Object.assign(new Error('El pago supera la deuda pendiente.'), { statusCode: 422 })
+    }
+    const result = await client.query(
+      `INSERT INTO supplier_payments (supplier_id,user_id,cash_session_id,method,amount,note)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id,amount,method,created_at AS "createdAt"`,
+      [
+        id,
+        user.id,
+        method === 'CASH' ? request.body.cashSessionId : null,
+        method,
+        amount,
+        request.body.note || null,
+      ],
+    )
+    await client.query('UPDATE suppliers SET current_debt=current_debt-$1 WHERE id=$2', [
+      amount,
+      id,
+    ])
+    return result.rows[0]
+  })
+  return json(response, 201, { payment })
+}
+
 async function getSale(user, id, response) {
   const result = await dbQuery(
     `SELECT s.id,s.ticket_number AS "ticketNumber",s.status,s.subtotal,s.discount,s.total,
@@ -173,6 +294,17 @@ async function handler(request, response) {
   const user = await requireRole(request, response, ['ADMIN', 'CASHIER', 'VIEWER'])
   if (!user) return
   const id = request.query.id
+  const pathname = new URL(request.url, 'http://localhost').pathname
+  if (pathname.startsWith('/api/customers/') && pathname.endsWith('/payments')) {
+    return createCustomerPayment(user, id, request, response)
+  }
+  if (pathname.startsWith('/api/customers/')) {
+    if (request.method !== 'GET') return methodNotAllowed(response, ['GET'])
+    return getCustomer(user, id, response)
+  }
+  if (pathname.startsWith('/api/suppliers/') && pathname.endsWith('/payments')) {
+    return createSupplierPayment(user, id, request, response)
+  }
   if (request.method === 'GET') return getSale(user, id, response)
   if (request.method === 'DELETE') return voidSale(user, id, response)
   if (request.method === 'PATCH') {
