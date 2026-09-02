@@ -12,11 +12,11 @@ Taste Skill está pensado principalmente para superficies de marketing. En este 
 
 ## Diales
 
-| Variable | Valor | Motivo |
-| --- | --- | --- |
-| DESIGN_VARIANCE | 3 | Las cajas y ventas requieren familiaridad y lectura veloz. |
-| MOTION_INTENSITY | 2 | El movimiento se limita al feedback táctil. |
-| VISUAL_DENSITY | 7 | Un cajero necesita ver información útil sin navegar. |
+| Variable         | Valor | Motivo                                                     |
+| ---------------- | ----- | ---------------------------------------------------------- |
+| DESIGN_VARIANCE  | 3     | Las cajas y ventas requieren familiaridad y lectura veloz. |
+| MOTION_INTENSITY | 2     | El movimiento se limita al feedback táctil.                |
+| VISUAL_DENSITY   | 7     | Un cajero necesita ver información útil sin navegar.       |
 
 ## Tokens
 

@@ -4,11 +4,11 @@ MiKiosco se implementa como una aplicación multi-tenant: una **organización** 
 
 ## Capas
 
-| Capa | Tecnología | Responsabilidad |
-| --- | --- | --- |
-| Cliente | React, Vite, PWA | POS optimista y consola operativa adaptable a tablet/PC |
-| API | Vercel Functions | Validación, autorización y reglas de negocio |
-| Datos | PostgreSQL | Fuente de verdad, auditoría y aislamiento por sucursal |
+| Capa           | Tecnología               | Responsabilidad                                                  |
+| -------------- | ------------------------ | ---------------------------------------------------------------- |
+| Cliente        | React, Vite, PWA         | POS optimista y consola operativa adaptable a tablet/PC          |
+| API            | Vercel Functions         | Validación, autorización y reglas de negocio                     |
+| Datos          | PostgreSQL               | Fuente de verdad, auditoría y aislamiento por sucursal           |
 | Sincronización | Cola local del navegador | Conserva ventas creadas sin conexión y las publica al reconectar |
 
 ## Principios de negocio
