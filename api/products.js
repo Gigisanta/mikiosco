@@ -6,13 +6,46 @@ export default async function handler(request, response) {
   if (!user) return
   if (request.method === 'GET') {
     const search = `%${String(request.query.q || '').trim()}%`
-    const result = await dbQuery('SELECT id, name, barcode, unit, sale_price AS "salePrice", cost_price AS "costPrice", stock, min_stock AS "minStock", max_stock AS "maxStock", category_id AS "categoryId" FROM products WHERE branch_id = $1 AND active = true AND (name ILIKE $2 OR COALESCE(barcode, \'\') ILIKE $2) ORDER BY name LIMIT 100', [user.branchId, search])
+    const result = await dbQuery(
+      'SELECT id, name, barcode, unit, sale_price AS "salePrice", cost_price AS "costPrice", stock, min_stock AS "minStock", max_stock AS "maxStock", category_id AS "categoryId" FROM products WHERE branch_id = $1 AND active = true AND (name ILIKE $2 OR COALESCE(barcode, \'\') ILIKE $2) ORDER BY name LIMIT 100',
+      [user.branchId, search],
+    )
     return json(response, 200, { items: result.rows })
   }
   if (request.method === 'POST') {
-    const { name, barcode, unit = 'unidad', salePrice, costPrice = 0, stock = 0, minStock = 0, maxStock = 0, categoryId = null } = request.body || {}
-    if (!name || Number(salePrice) < 0 || Number(minStock) < 0 || Number(maxStock) < Number(minStock)) return json(response, 422, { error: 'Revisá nombre, precios y límites de stock.' })
-    const result = await dbQuery('INSERT INTO products (branch_id, name, barcode, unit, sale_price, cost_price, stock, min_stock, max_stock, category_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *', [user.branchId, name, barcode || null, unit, salePrice, costPrice, stock, minStock, maxStock, categoryId])
+    const {
+      name,
+      barcode,
+      unit = 'unidad',
+      salePrice,
+      costPrice = 0,
+      stock = 0,
+      minStock = 0,
+      maxStock = 0,
+      categoryId = null,
+    } = request.body || {}
+    if (
+      !name ||
+      Number(salePrice) < 0 ||
+      Number(minStock) < 0 ||
+      Number(maxStock) < Number(minStock)
+    )
+      return json(response, 422, { error: 'Revisá nombre, precios y límites de stock.' })
+    const result = await dbQuery(
+      'INSERT INTO products (branch_id, name, barcode, unit, sale_price, cost_price, stock, min_stock, max_stock, category_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *',
+      [
+        user.branchId,
+        name,
+        barcode || null,
+        unit,
+        salePrice,
+        costPrice,
+        stock,
+        minStock,
+        maxStock,
+        categoryId,
+      ],
+    )
     return json(response, 201, { item: result.rows[0] })
   }
   return methodNotAllowed(response, ['GET', 'POST'])
