@@ -7,6 +7,8 @@ import {
   ShoppingBag,
   Truck,
   UsersRound,
+  Volume2,
+  VolumeX,
   WalletCards,
 } from 'lucide-react'
 
@@ -31,6 +33,8 @@ export function Sidebar({
   user,
   branch,
   onLogout,
+  soundEnabled,
+  onToggleSound,
 }) {
   const visibleItems = items.filter(([, label]) => role !== 'CASHIER' || label !== 'Estadísticas')
   return (
@@ -72,6 +76,17 @@ export function Sidebar({
             {{ ADMIN: 'Administrador', CASHIER: 'Cajero', VIEWER: 'Solo consulta' }[role]}
           </span>
         </div>
+        <button
+          className="sound-toggle"
+          data-sound="none"
+          aria-label={
+            soundEnabled ? 'Desactivar sonidos de la interfaz' : 'Activar sonidos de la interfaz'
+          }
+          title={soundEnabled ? 'Sonidos activados' : 'Sonidos desactivados'}
+          onClick={onToggleSound}
+        >
+          {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+        </button>
         {onLogout ? (
           <button className="logout-button" aria-label="Cerrar sesión" onClick={onLogout}>
             <LogOut size={16} />

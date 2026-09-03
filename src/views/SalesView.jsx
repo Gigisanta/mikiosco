@@ -9,8 +9,6 @@ import {
   Search,
   ShoppingBag,
   Split,
-  Volume2,
-  VolumeX,
   WalletCards,
 } from 'lucide-react'
 import { money, number } from '../lib/format'
@@ -18,6 +16,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { stockStatus, unitLabel, unitStep } from '../lib/inventory'
 import { calculateChange, closestTender, normalizeMoney, parseScannerQuery } from '../lib/pos'
 import { categoryTone, productInitials } from '../lib/productAppearance'
+import { playInterfaceSound } from '../lib/sound'
 
 const paymentMethods = [
   ['CASH', 'Efectivo'],
@@ -57,9 +56,6 @@ export function SalesView({
   const [newCustomer, setNewCustomer] = useState('')
   const [catalogMode, setCatalogMode] = useState(
     () => localStorage.getItem('mikiosco-catalog-mode') || 'grid',
-  )
-  const [soundEnabled, setSoundEnabled] = useState(
-    () => localStorage.getItem('mikiosco-scan-sound') !== 'off',
   )
   const [scannerActive, setScannerActive] = useState(false)
   const [flashId, setFlashId] = useState(null)
@@ -150,20 +146,6 @@ export function SalesView({
     }
   }
 
-  function beep() {
-    if (!soundEnabled || !globalThis.AudioContext) return
-    const context = new AudioContext()
-    const oscillator = context.createOscillator()
-    const gain = context.createGain()
-    oscillator.frequency.value = 880
-    gain.gain.setValueAtTime(0.035, context.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.07)
-    oscillator.connect(gain).connect(context.destination)
-    oscillator.start()
-    oscillator.stop(context.currentTime + 0.07)
-    oscillator.addEventListener('ended', () => context.close(), { once: true })
-  }
-
   function addWithFeedback(product, quantity, fromScanner = false) {
     addProduct(product, quantity)
     setFlashId(product.id)
@@ -172,7 +154,7 @@ export function SalesView({
       () => lineRefs.current.get(product.id)?.scrollIntoView({ block: 'nearest' }),
       0,
     )
-    beep()
+    playInterfaceSound('add')
     if (fromScanner) {
       setScannerActive(true)
       window.clearTimeout(scannerTimer.current)
@@ -183,12 +165,6 @@ export function SalesView({
   function changeCatalogMode(nextMode) {
     setCatalogMode(nextMode)
     localStorage.setItem('mikiosco-catalog-mode', nextMode)
-  }
-
-  function toggleSound() {
-    const next = !soundEnabled
-    setSoundEnabled(next)
-    localStorage.setItem('mikiosco-scan-sound', next ? 'on' : 'off')
   }
 
   function selectMethod(nextMethod) {
@@ -313,12 +289,6 @@ export function SalesView({
             >
               <List size={18} />
             </button>
-            <button
-              aria-label={soundEnabled ? 'Desactivar sonido' : 'Activar sonido'}
-              onClick={toggleSound}
-            >
-              {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
-            </button>
           </div>
         </div>
         <div className={`product-grid ${catalogMode === 'list' ? 'list-mode' : ''}`}>
@@ -328,6 +298,7 @@ export function SalesView({
               <button
                 ref={index === 0 ? firstProductRef : null}
                 className="product-card"
+                data-sound="none"
                 key={product.id}
                 onClick={() =>
                   addWithFeedback(product, Number(scanQuantity) || unitStep(product.unit))
