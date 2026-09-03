@@ -122,10 +122,10 @@ nav {
 .avatar {
   margin-left: auto;
 }
-.logout-button {
+.logout-button,
+.sound-toggle {
   width: 32px;
   height: 32px;
-  margin-left: auto;
   display: grid;
   place-items: center;
   border: 0;
@@ -133,6 +133,21 @@ nav {
   background: #f0f3f0;
   color: #62726a;
   cursor: pointer;
+}
+.sound-toggle {
+  flex: none;
+  margin-left: auto;
+  border: 1px solid #d8e4dc;
+  background: #fff;
+  color: #4f7160;
+  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.sound-toggle:active {
+  transform: scale(0.97);
+}
+.sound-toggle:hover {
+  background: #e7f4ed;
+  color: #087b56;
 }
 .logout-button:hover {
   background: #fde9e2;
@@ -3458,8 +3473,12 @@ table {
     padding-inline: 0;
   }
   .avatar,
-  .logout-button {
+  .logout-button,
+  .sound-toggle {
     margin-left: 0;
+  }
+  .sidebar-bottom {
+    flex-direction: column;
   }
 }
 @media (max-width: 700px) {

@@ -10,6 +10,12 @@ import { createDemoBackup, downloadBackup } from './lib/backup'
 import { formatDateLabel, money } from './lib/format'
 import { roundQuantity, unitStep } from './lib/inventory'
 import { enqueueSale, readPendingSales, syncPendingSales } from './lib/offlineQueue'
+import {
+  areInterfaceSoundsEnabled,
+  bindInterfaceSounds,
+  playInterfaceSound,
+  setInterfaceSoundsEnabled,
+} from './lib/sound'
 import { CashView } from './views/CashView'
 import { CustomersView } from './views/CustomersView'
 import { DashboardView } from './views/DashboardView'
@@ -60,10 +66,13 @@ export default function App() {
   const [statisticsData, setStatisticsData] = useState(null)
   const [statisticsMonth, setStatisticsMonth] = useState('')
   const [statisticsLoading, setStatisticsLoading] = useState(false)
+  const [soundEnabled, setSoundEnabled] = useState(areInterfaceSoundsEnabled)
   const [importErrors, setImportErrors] = useState([])
   const [menuOpen, setMenuOpen] = useState(false)
   const [message, setMessage] = useState(null)
   const fileInput = useRef(null)
+
+  useEffect(() => bindInterfaceSounds(), [])
 
   const loadServerData = useCallback(async () => {
     try {
@@ -109,6 +118,7 @@ export default function App() {
 
   useEffect(() => {
     if (!message) return undefined
+    playInterfaceSound(message.type || 'success')
     const timer = window.setTimeout(() => setMessage(null), 4500)
     return () => window.clearTimeout(timer)
   }, [message])
@@ -229,6 +239,14 @@ export default function App() {
     setMessage({ text, type })
   }
 
+  function toggleInterfaceSounds() {
+    const next = !soundEnabled
+    if (!next) playInterfaceSound('tap')
+    setSoundEnabled(next)
+    setInterfaceSoundsEnabled(next)
+    if (next) playInterfaceSound('success')
+  }
+
   async function exportBackup() {
     try {
       const backup = DEMO_MODE
@@ -242,6 +260,7 @@ export default function App() {
   }
 
   function handleLogin(result) {
+    playInterfaceSound('success')
     setSession({ user: result.user, branch: result.branch })
   }
 
@@ -790,6 +809,8 @@ export default function App() {
         user={session.user}
         branch={session.branch}
         onLogout={DEMO_MODE ? null : handleLogout}
+        soundEnabled={soundEnabled}
+        onToggleSound={toggleInterfaceSounds}
       />
       <main id="main-content">
         <Topbar

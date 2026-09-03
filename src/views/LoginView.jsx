@@ -150,7 +150,7 @@ export function LoginView({ onLogin }) {
                 {error}
               </div>
             )}
-            <button type="submit" className="primary" disabled={loading}>
+            <button type="submit" className="primary" data-sound="none" disabled={loading}>
               {loading ? 'Ingresando…' : branches.length ? 'Entrar a la sucursal' : 'Ingresar'}
             </button>
           </form>
